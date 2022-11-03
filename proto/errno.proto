@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+package raid_fs;
+
+enum  Errno{
+  OK = 0;
+  reserved 1 to 50;
+  // The task id is unknown to the server.
+  UNKNOWN_TASK = 51;
+}
