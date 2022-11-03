@@ -1,0 +1,30 @@
+syntax = "proto3";
+package raid_fs;
+
+import "errno.proto";
+/* import "google/protobuf/empty.proto"; */
+
+/*
+   We mimic POSIX filesystem API for the distributed storage system.
+   However, we discard unsuitable abstractions for distributed systems
+   such as directories and file permission.
+   Paths can contain hierarchical structure like '/' to organize related files,
+   but they are simply treated as keys for files.
+*/
+
+message OpenRequest {
+  string path = 1;
+  bool o_create = 2;
+}
+
+message OpenReply {
+  Errno errno = 1;
+  int64 fd = 2;
+}
+
+// Interface exported by the server.
+service FileSystem {
+  /* open a new file and return the fd. */
+  /* O_CREAT: If set to True, then create the file on the fly. */
+  rpc Open(OpenRequest) returns (OpenReply) {}
+}
