@@ -2,7 +2,7 @@ syntax = "proto3";
 package raid_fs;
 
 import "errno.proto";
-/* import "google/protobuf/empty.proto"; */
+import "google/protobuf/empty.proto";
 
 /*
    We mimic POSIX filesystem API for the distributed storage system.
@@ -17,14 +17,63 @@ message OpenRequest {
   bool o_create = 2;
 }
 
+message OpenOKReply {
+  uint64 fd = 1;
+  uint64 size = 2;
+}
+
 message OpenReply {
-  Errno errno = 1;
-  int64 fd = 2;
+  oneof reply {
+    Errno errno = 1;
+    OpenOKReply ok = 2;
+  }
+}
+
+message ReadRequest {
+  uint64 fd = 1;
+  uint64 offset = 2;
+  uint64 count = 3;
+}
+
+message ReadOKReply {
+  uint64 fd = 1;
+  uint64 size = 2;
+}
+
+message ReadReply {
+  oneof reply {
+    Errno errno = 1;
+    ReadOKReply ok = 2;
+  }
+}
+
+message WriteRequest {
+  uint64 fd = 1;
+  uint64 offset = 2;
+  uint64 count = 3;
+}
+
+message WriteOKReply {
+  uint64 fd = 1;
+  uint64 size = 2;
+}
+
+message WriteReply {
+  oneof reply {
+    Errno errno = 1;
+    WriteOKReply ok = 2;
+  }
+}
+
+message RemoveRequest {
+  string path = 1;
 }
 
 // Interface exported by the server.
 service FileSystem {
-  /* open a new file and return the fd. */
+  /* open a file and return the fd. */
   /* O_CREAT: If set to True, then create the file on the fly. */
   rpc Open(OpenRequest) returns (OpenReply) {}
+  rpc Read(ReadRequest) returns (ReadReply) {}
+  rpc Remove(RemoveRequest) returns (google.protobuf.Empty) {}
 }

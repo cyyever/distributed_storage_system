@@ -1,0 +1,29 @@
+syntax = "proto3";
+package raid_fs;
+
+import "errno.proto";
+/* import "google/protobuf/empty.proto"; */
+
+/*
+   RAID provides block IO API to the above filesystem.
+*/
+
+message BlockReadRequest {
+  uint64 block_no = 1;
+  optional uint64 block_cnt = 2;
+}
+
+message BlockReadReply {
+  optional Errno errno = 1;
+  repeated bytes blocks = 2;
+}
+
+message BlockWriteRequest {
+  uint64 block_no = 1;
+  optional uint64 block_cnt = 2;
+  repeated bytes blocks = 3;
+}
+
+message BlockWriteReply {
+  optional Errno errno = 1;
+}
