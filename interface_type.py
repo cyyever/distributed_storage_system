@@ -7,6 +7,18 @@ class Errno(IntEnum):
     SUCC = auto()
 
 
+@dataclass
+class OpenRequest:
+    path: str
+    create_file: bool
+
+
+@dataclass
+class OpenReply:
+    errno: Errno
+    fd: int
+
+
 # RAID interface types
 @dataclass
 class BlockReadRequest:
