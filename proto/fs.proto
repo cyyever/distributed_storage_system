@@ -75,5 +75,6 @@ service FileSystem {
   /* O_CREAT: If set to True, then create the file on the fly. */
   rpc Open(OpenRequest) returns (OpenReply) {}
   rpc Read(ReadRequest) returns (ReadReply) {}
+  rpc Write(WriteRequest) returns (WriteReply) {}
   rpc Remove(RemoveRequest) returns (google.protobuf.Empty) {}
 }
