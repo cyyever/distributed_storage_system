@@ -12,6 +12,21 @@ import "google/protobuf/empty.proto";
    but they are simply treated as keys for files.
 */
 
+message CreateRequest {
+  string path = 1;
+}
+
+message CreateOKReply {
+  uint64 fd = 1;
+}
+
+message CreateReply {
+  oneof reply {
+    Errno errno = 1;
+    CreateOKReply ok = 2;
+  }
+}
+
 message OpenRequest {
   string path = 1;
   bool o_create = 2;
@@ -69,12 +84,16 @@ message RemoveRequest {
   string path = 1;
 }
 
-// Interface exported by the server.
 service FileSystem {
-  /* open a file and return the fd. */
+  /* Create a file and return the fd. */
+  rpc Create(CreateRequest) returns (CreateReply) {}
+  /* Open a file and return the fd. */
   /* O_CREAT: If set to True, then create the file on the fly. */
   rpc Open(OpenRequest) returns (OpenReply) {}
+  /* Read a file. */
   rpc Read(ReadRequest) returns (ReadReply) {}
+  /* Write a file. */
   rpc Write(WriteRequest) returns (WriteReply) {}
+  /* Delete a file. */
   rpc Remove(RemoveRequest) returns (google.protobuf.Empty) {}
 }
