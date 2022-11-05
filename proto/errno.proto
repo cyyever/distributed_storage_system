@@ -1,10 +1,7 @@
 syntax = "proto3";
 package raid_fs;
 
-/* import "google/protobuf/empty.proto"; */
-
-// we use POSIX errno names for error notification
-// see $(man 3 errno) for details
 enum Errno {
-  SUCC = 0;
+  ERRNO_UNSPECIFIED = 0;
+  ERRNO_OUT_OF_RANGE = 1;
 }

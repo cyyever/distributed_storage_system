@@ -12,10 +12,16 @@ message BlockReadRequest {
   /* optional uint64 block_cnt = 2; */
 }
 
-message BlockReadReply {
-  optional Errno errno = 1;
-  bytes block = 2;
+message BlockReadOKReply {
+  bytes block = 1;
   /* repeated bytes blocks = 2; */
+}
+
+message BlockReadReply {
+  oneof test_oneof {
+    Errno errno = 1;
+    BlockReadOKReply ok = 2;
+  }
 }
 
 message BlockWriteRequest {

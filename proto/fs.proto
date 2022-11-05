@@ -21,7 +21,7 @@ message CreateOKReply {
 }
 
 message CreateReply {
-  oneof reply {
+  oneof test_oneof {
     Errno errno = 1;
     CreateOKReply ok = 2;
   }
@@ -38,7 +38,7 @@ message OpenOKReply {
 }
 
 message OpenReply {
-  oneof reply {
+  oneof test_oneof {
     Errno errno = 1;
     OpenOKReply ok = 2;
   }
@@ -56,7 +56,7 @@ message ReadOKReply {
 }
 
 message ReadReply {
-  oneof reply {
+  oneof test_oneof {
     Errno errno = 1;
     ReadOKReply ok = 2;
   }
@@ -74,7 +74,7 @@ message WriteOKReply {
 }
 
 message WriteReply {
-  oneof reply {
+  oneof test_oneof {
     Errno errno = 1;
     WriteOKReply ok = 2;
   }
