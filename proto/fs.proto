@@ -1,7 +1,7 @@
 syntax = "proto3";
 package raid_fs;
 
-import "errno.proto";
+import "error.proto";
 import "google/protobuf/empty.proto";
 
 /*
@@ -22,7 +22,7 @@ message CreateOKReply {
 
 message CreateReply {
   oneof test_oneof {
-    Errno errno = 1;
+    Error error = 1;
     CreateOKReply ok = 2;
   }
 }
@@ -39,7 +39,7 @@ message OpenOKReply {
 
 message OpenReply {
   oneof test_oneof {
-    Errno errno = 1;
+    Error error = 1;
     OpenOKReply ok = 2;
   }
 }
@@ -57,7 +57,7 @@ message ReadOKReply {
 
 message ReadReply {
   oneof test_oneof {
-    Errno errno = 1;
+    Error error = 1;
     ReadOKReply ok = 2;
   }
 }
@@ -75,7 +75,7 @@ message WriteOKReply {
 
 message WriteReply {
   oneof test_oneof {
-    Errno errno = 1;
+    Error error = 1;
     WriteOKReply ok = 2;
   }
 }
