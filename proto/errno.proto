@@ -1,7 +1,0 @@
-syntax = "proto3";
-package raid_fs;
-
-enum Errno {
-  ERRNO_UNSPECIFIED = 0;
-  ERRNO_OUT_OF_RANGE = 1;
-}
