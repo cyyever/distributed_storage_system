@@ -6,10 +6,6 @@ project(RAID_FS CXX)
 
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
-# find_package(PkgConfig REQUIRED)
-
-# pkg_search_module(grpc REQUIRED IMPORTED_TARGET grpc) pkg_search_module(grpc++
-# REQUIRED IMPORTED_TARGET grpc++)
 
 set(proto_dir ${CMAKE_CURRENT_LIST_DIR}/proto)
 # set(proto_files ${proto_dir}/fs.proto ${proto_dir}/raiyypd.proto)
