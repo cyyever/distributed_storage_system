@@ -34,6 +34,16 @@ class SuperBlock:
     data_bitmap_size: int
 
 
+@dataclass
+class Inode:
+    size: int
+    block_number: int
+    ctime: int
+    mtime: int
+    block_number: int
+    block_ptr: int
+
+
 class FSServicer(fs_pb2_grpc.FileSystemServicer):
     def __init__(self):
         self.__super_block: dict = dict()
