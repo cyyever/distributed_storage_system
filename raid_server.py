@@ -31,15 +31,17 @@ class RAIDNode(raid_pb2_grpc.RAIDNodeServicer):
     def Read(self, request, context):
         context.set_code(grpc.StatusCode.OK)
         if request.block_no < self.__block_number:
-            return raid_pb2.BlockReadReply(
-                ok=raid_pb2.BlockReadOKReply(block=self.__blocks[request.block_no])
-            )
+            with self.__lock:
+                return raid_pb2.BlockReadReply(
+                    ok=raid_pb2.BlockReadOKReply(block=self.__blocks[request.block_no])
+                )
         return raid_pb2.BlockReadReply(errno=errno_pb2.Errno.ERRNO_OUT_OF_RANGE)
 
     def Write(self, request, context):
         context.set_code(grpc.StatusCode.OK)
         if request.block_no < self.__block_number:
-            self.__blocks[request.block_no] = request.block
+            with self.__lock:
+                self.__blocks[request.block_no] = request.block
             return raid_pb2.BlockWriteReply()
         return raid_pb2.BlockWriteReply(errno=errno_pb2.Errno.ERRNO_OUT_OF_RANGE)
 
