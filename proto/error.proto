@@ -4,4 +4,5 @@ package raid_fs;
 enum Error {
   ERROR_UNSPECIFIED = 0;
   ERROR_OUT_OF_RANGE = 1;
+  ERROR_INVALID_BLOCK=2;
 }

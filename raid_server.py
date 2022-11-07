@@ -7,7 +7,6 @@ from concurrent import futures
 import grpc
 
 from config import load_config
-from constant import block_size
 
 # import numpy as np
 
@@ -23,8 +22,9 @@ import proto_lib.raid_pb2_grpc as raid_pb2_grpc
 
 
 class RAIDNode(raid_pb2_grpc.RAIDNodeServicer):
-    def __init__(self, block_number: int):
-        self.__block_number = block_number
+    def __init__(self, disk_capacity: int, block_number: int):
+        assert disk_capacity % block_number == 0
+        self.__block_number = disk_capacity // block_number
         self.__blocks = [bytearray(block_size) for _ in range(block_number)]
         self.__lock = threading.Lock()
 
@@ -48,9 +48,10 @@ class RAIDNode(raid_pb2_grpc.RAIDNodeServicer):
 
 if __name__ == "__main__":
     config = load_config()
-    first_raid_node_port = config["first_raid_node_port"]
-    raid_node_number = config["raid_node_number"]
-    block_number = config["block_number"]
+    disk_capacity = config["disk_capacity"]
+    first_raid_node_port = config["RAID"]["first_node_port"]
+    raid_node_number = config["RAID"]["node_number"]
+    block_size = config["RAID"]["block_size"]
     servers = []
     for i in range(raid_node_number):
         server = grpc.server(futures.ThreadPoolExecutor())

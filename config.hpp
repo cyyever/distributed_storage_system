@@ -52,4 +52,22 @@ namespace raid_fs {
     uint16_t port{};
     size_t block_size{};
   };
+  struct RAIDConfig : public Config {
+    explicit RAIDConfig(const std::filesystem::path &config_file)
+        : Config(config_file) {
+      YAML::Node yaml_node = YAML::LoadFile(config_file)["RAID"];
+      auto port = yaml_node["first_node_port"].as<uint16_t>();
+      auto node_number = yaml_node["node_number"].as<size_t>();
+      for (size_t i = 0; i < node_number; i++) {
+        ports.emplace_back(port + i);
+      }
+
+      block_size = parse_size(yaml_node, "block_size");
+      if (disk_capacity % block_size != 0) {
+        throw std::invalid_argument("disk can't be partitioned into blocks");
+      }
+    }
+    std::vector<uint16_t> ports;
+    size_t block_size{};
+  };
 } // namespace raid_fs

@@ -5,6 +5,6 @@ filesystem:
   port: 60000
   block_size: 4KB
 RAID:
-  node_number: 10
+  node_number: 1
   first_node_port: 60001
   block_size: 512B
