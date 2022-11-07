@@ -1,7 +1,7 @@
 syntax = "proto3";
 package raid_fs;
 
-import "errno.proto";
+import "error.proto";
 
 /*
    RAID provides block IO API to the above filesystem.
@@ -19,7 +19,7 @@ message BlockReadOKReply {
 
 message BlockReadReply {
   oneof test_oneof {
-    Errno errno = 1;
+    Error error = 1;
     BlockReadOKReply ok = 2;
   }
 }
@@ -31,7 +31,7 @@ message BlockWriteRequest {
 }
 
 message BlockWriteReply {
-  optional Errno errno = 1;
+  optional Error error = 1;
 }
 
 /* service RAIDController { */
