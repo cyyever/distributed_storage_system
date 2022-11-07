@@ -39,8 +39,8 @@ namespace raid_fs {
     }
     size_t disk_capacity{};
   };
-  struct FilesystemConfig : public Config {
-    explicit FilesystemConfig(const std::filesystem::path &config_file)
+  struct FileSystemConfig : public Config {
+    explicit FileSystemConfig(const std::filesystem::path &config_file)
         : Config(config_file) {
       YAML::Node yaml_node = YAML::LoadFile(config_file)["filesystem"];
       port = yaml_node["port"].as<uint16_t>();

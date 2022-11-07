@@ -31,7 +31,7 @@ namespace raid_fs {
     bool read_super_block() {
       super_blk = {.FS_type = "RAIDFS",
                    .FS_version = 0,
-                   .bitmap_block_offset = 0,
+                   .bitmap_offset = 0,
                    .inode_bitmap_size = 0,
                    .data_bitmap_size = 0,
                    .inode_table_offset = 0,
@@ -52,7 +52,8 @@ int main(int argc, char **argv) {
     std::cerr << "Usage:" << argv[0] << " config.yaml" << std::endl;
     return -1;
   }
-  raid_fs::FilesystemConfig cfg(argv[1]);
+  raid_fs::FileSystemConfig cfg(argv[1]);
+  raid_fs::Block::block_size = cfg.block_size;
   std::string server_address(fmt::format("0.0.0.0:{}", cfg.port));
 
   raid_fs::FileSystemServiceImpl service(cfg.disk_capacity, cfg.block_size);
