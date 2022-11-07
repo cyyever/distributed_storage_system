@@ -14,8 +14,8 @@
 #include <yaml-cpp/yaml.h>
 
 namespace raid_fs {
-  struct config {
-    explicit config(const std::filesystem::path &config_file) {
+  struct Config {
+    explicit Config(const std::filesystem::path &config_file) {
       YAML::Node yaml_node = YAML::LoadFile(config_file);
 
       disk_capacity = parse_size(yaml_node, "disk_capacity");
@@ -39,9 +39,9 @@ namespace raid_fs {
     }
     size_t disk_capacity{};
   };
-  struct filesystem_config : public config {
-    explicit filesystem_config(const std::filesystem::path &config_file)
-        : config(config_file) {
+  struct FilesystemConfig : public Config {
+    explicit FilesystemConfig(const std::filesystem::path &config_file)
+        : Config(config_file) {
       YAML::Node yaml_node = YAML::LoadFile(config_file)["filesystem"];
       port = yaml_node["port"].as<uint16_t>();
       block_size = parse_size(yaml_node, "block_size");

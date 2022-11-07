@@ -1,8 +1,3 @@
-/*!
- * \file fs_server.cpp
- *
- * \brief File system implementation
- */
 
 #include <fmt/format.h>
 #include <grpc/grpc.h>
@@ -11,25 +6,15 @@
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
 
+#include "block.hpp"
 #include "config.hpp"
 #include "fs.grpc.pb.h"
 
 namespace raid_fs {
-  struct super_block {
-    char FS_type[8];
-    uint16_t FS_version;
-    uint64_t bitmap_block_offset;
-    uint64_t inode_bitmap_size;
-    uint64_t data_bitmap_size;
-    uint64_t inode_table_offset;
-    uint64_t inode_number;
-    uint64_t data_table_offset;
-    uint64_t data_block_number;
-  } __attribute__((aligned(128)));
 
-  class FS_server final : public raid_fs::FileSystem::Service {
+  class FileSystemServiceImpl final : public raid_fs::FileSystem::Service {
   public:
-    explicit FS_server(size_t disk_capacity_, size_t block_size_)
+    explicit FileSystemServiceImpl(size_t disk_capacity_, size_t block_size_)
         : disk_capacity(disk_capacity_), block_size(block_size_) {
       if (!read_super_block()) {
         throw std::runtime_error("failed to read super block");
@@ -59,7 +44,7 @@ namespace raid_fs {
   private:
     size_t disk_capacity;
     size_t block_size;
-    super_block super_blk{};
+    SuperBlock super_blk{};
   };
 } // namespace raid_fs
 int main(int argc, char **argv) {
@@ -67,10 +52,10 @@ int main(int argc, char **argv) {
     std::cerr << "Usage:" << argv[0] << " config.yaml" << std::endl;
     return -1;
   }
-  raid_fs::filesystem_config cfg(argv[1]);
+  raid_fs::FilesystemConfig cfg(argv[1]);
   std::string server_address(fmt::format("0.0.0.0:{}", cfg.port));
 
-  raid_fs::FS_server service(cfg.disk_capacity, cfg.block_size);
+  raid_fs::FileSystemServiceImpl service(cfg.disk_capacity, cfg.block_size);
 
   grpc::ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
