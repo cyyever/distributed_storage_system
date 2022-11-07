@@ -5,6 +5,7 @@
  */
 #pragma once
 #include <filesystem>
+#include <fmt/format.h>
 #include <memory>
 #include <regex>
 #include <string>
@@ -13,33 +14,37 @@
 namespace raid_fs {
 struct config {
   explicit config(const std::filesystem::path &config_file) {
-    YAML::Node yaml_config = YAML::LoadFile(config_file);
+    YAML::Node yaml_node = YAML::LoadFile(config_file);
 
-    fs_port = yaml_config["fs_port"].as<uint16_t>();
-
-    std::regex re("^([0-9]+)GB$");
-    std::smatch match;
-    auto disk_capacity_str = yaml_config["disk_capacity"].as<std::string>();
-    if (std::regex_search(disk_capacity_str, match, re)) {
-      disk_capacity = std::stoull(match.str(1));
-      disk_capacity *= 1024 * 1024 * 1024;
-    } else {
-      throw std::invalid_argument(std::string("invalid disk capacity:") +
-                                  disk_capacity_str);
-    }
-
-    re = "^([0-9]+)KB$";
-    auto fs_block_size_str = yaml_config["fs_block_size"].as<std::string>();
-    if (std::regex_search(fs_block_size_str, match, re)) {
-      fs_block_size = std::stoull(match.str(1));
-      fs_block_size *= 1024;
-    } else {
-      throw std::invalid_argument(
-          std::string("invalid file system block size:") + fs_block_size_str);
-    }
+    disk_capacity = parse_size(yaml_node, "disk_capacity");
   }
-  uint16_t fs_port{};
+  static size_t parse_size(const YAML::Node &node, const std::string &key) {
+    size_t result = 0;
+    std::smatch match;
+    std::regex re("^([0-9]+)([KG]?)B$");
+    auto config_value = node[key].as<std::string>();
+    if (std::regex_search(config_value, match, re)) {
+      result = std::stoull(match.str(1));
+      if (match.str(2) == "K") {
+        result *= 1024;
+      } else if (match.str(2) == "G") {
+        result *= 1024 * 1024 * 1024;
+      }
+      return result;
+    }
+    throw std::invalid_argument(
+        fmt::format("invalid value for {}:{}", key, config_value));
+  }
   size_t disk_capacity{};
-  size_t fs_block_size{};
+};
+struct filesystem_config : public config {
+  explicit filesystem_config(const std::filesystem::path &config_file)
+      : config(config_file) {
+    YAML::Node yaml_node = YAML::LoadFile(config_file)["filesystem"];
+    port = yaml_node["port"].as<uint16_t>();
+    block_size = parse_size(yaml_node, "block_size");
+  }
+  uint16_t port{};
+  size_t block_size{};
 };
 } // namespace raid_fs

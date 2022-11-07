@@ -9,6 +9,7 @@
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
+#include <fmt/format.h>
 
 #include "config.hpp"
 #include "fs.grpc.pb.h"
@@ -66,11 +67,10 @@ int main(int argc, char **argv) {
     std::cerr << "Usage:" << argv[0] << " config.yaml" << std::endl;
     return -1;
   }
-  raid_fs::config cfg(argv[1]);
-  std::string server_address(std::string("0.0.0.0:") +
-                             std::to_string(cfg.fs_port));
+  raid_fs::filesystem_config cfg(argv[1]);
+  std::string server_address(fmt::format("0.0.0.0:{}",cfg.port));
 
-  raid_fs::FS_server service(cfg.disk_capacity, cfg.fs_block_size);
+  raid_fs::FS_server service(cfg.disk_capacity, cfg.block_size);
 
   grpc::ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());

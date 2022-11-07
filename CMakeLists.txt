@@ -7,6 +7,7 @@ include(cmake/all.cmake)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
 
 set(proto_dir ${CMAKE_CURRENT_LIST_DIR}/proto)
 set(proto_files ${proto_dir}/fs.proto ${proto_dir}/error.proto)
@@ -30,4 +31,4 @@ add_executable(
 target_include_directories(fs_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(
   fs_server PUBLIC protobuf::libprotobuf gRPC::grpc++_unsecure
-                   gRPC::grpc_unsecure yaml-cpp)
+                   gRPC::grpc_unsecure yaml-cpp fmt::fmt)
