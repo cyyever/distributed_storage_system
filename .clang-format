@@ -1,0 +1,18 @@
+BasedOnStyle:  LLVM
+TabWidth: 4
+---
+Language:        Cpp
+IndentCaseLabels: true
+NamespaceIndentation: All
+SortIncludes: true
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex:           '<windows.h>'
+    Priority:        -1
+  - Regex:           '<[[:alnum:]._]+>'
+    Priority:        1
+  - Regex:           '<[[:alnum:]._]+\/.*>'
+    Priority:        2
+  - Regex:           '.*'
+    Priority:        3
+...
