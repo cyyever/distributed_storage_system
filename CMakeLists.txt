@@ -9,6 +9,10 @@ find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
+find_package(spdlog REQUIRED)
+find_package(CyyNaiveLib REQUIRED)
+find_package(Boost REQUIRED)
+find_package(CyyAlgorithmLib REQUIRED)
 
 set(proto_dir ${CMAKE_CURRENT_LIST_DIR}/proto)
 set(proto_files ${proto_dir}/fs.proto ${proto_dir}/error.proto
@@ -30,10 +34,11 @@ add_custom_command(
     --plugin=protoc-gen-grpc="${grpc_cpp_plugin_path}" ${proto_files})
 
 add_executable(
-  fs_server ${CMAKE_CURRENT_LIST_DIR}/fs_server.cpp
-            ${CMAKE_CURRENT_LIST_DIR}/config.hpp ${fs_grpc_srcs} ${fs_proto_srcs} ${error_proto_srcs})
+  fs_server
+  ${CMAKE_CURRENT_LIST_DIR}/fs_server.cpp ${CMAKE_CURRENT_LIST_DIR}/config.hpp
+  ${fs_grpc_srcs} ${fs_proto_srcs} ${error_proto_srcs})
 
 target_include_directories(fs_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(
   fs_server PUBLIC protobuf::libprotobuf gRPC::grpc++_unsecure
-                   gRPC::grpc_unsecure yaml-cpp fmt::fmt)
+                   gRPC::grpc_unsecure yaml-cpp fmt::fmt CyyAlgorithmLib)
