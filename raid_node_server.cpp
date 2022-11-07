@@ -16,7 +16,7 @@ namespace raid_fs {
     explicit RAIDNodeServiceImpl(size_t disk_capacity_, size_t block_size_)
         : block_size(block_size_) {
       block_number = disk_capacity_ / block_size;
-      disk.reserve(block_number);
+      disk.resize(block_number);
     };
 
     ~RAIDNodeServiceImpl() override = default;
@@ -62,19 +62,22 @@ int main(int argc, char **argv) {
   }
   raid_fs::RAIDConfig cfg(argv[1]);
   std::vector<std::unique_ptr<grpc::Server>> servers;
+  std::vector<std::unique_ptr<raid_fs::RAIDNodeServiceImpl>> services;
 
+  std::cout << cfg.ports.size() << std::endl;
   for (auto port : cfg.ports) {
     std::string server_address(fmt::format("0.0.0.0:{}", port));
-    raid_fs::RAIDNodeServiceImpl service(cfg.disk_capacity, cfg.block_size);
     grpc::ServerBuilder builder;
+    services.emplace_back(std::make_unique<raid_fs::RAIDNodeServiceImpl>(
+        cfg.disk_capacity, cfg.block_size));
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
-    builder.RegisterService(&service);
-    std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
+    builder.RegisterService(services.back().get());
+    servers.emplace_back(builder.BuildAndStart());
     std::cout << "Server listening on " << server_address << std::endl;
-    servers.emplace_back(std::move(server));
   }
-  for (auto &server : servers) {
+  for (const auto &server : servers) {
     server->Wait();
   }
+  std::cout << "wait end" << std::endl;
   return 0;
 }
