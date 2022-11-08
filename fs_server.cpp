@@ -1,3 +1,8 @@
+/*!
+ * \file fs_server.cpp
+ *
+ * \brief Implementation of a file system
+ */
 
 #include <fmt/format.h>
 #include <grpc/grpc.h>
@@ -8,6 +13,7 @@
 
 #include "block.hpp"
 #include "config.hpp"
+#include "raid_controller.hpp"
 #include "fs.grpc.pb.h"
 
 namespace raid_fs {
