@@ -48,9 +48,11 @@ namespace raid_fs {
       if (disk_capacity % block_size != 0) {
         throw std::invalid_argument("disk can't be partitioned into blocks");
       }
+      block_pool_size = parse_size(yaml_node, "block_pool_size");
     }
     uint16_t port{};
     size_t block_size{};
+    size_t block_pool_size{};
   };
   struct RAIDConfig : public Config {
     explicit RAIDConfig(const std::filesystem::path &config_file)

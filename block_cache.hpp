@@ -18,13 +18,13 @@ namespace raid_fs {
       : public ::cyy::algorithm::storage_backend<uint64_t, Block> {
   public:
     explicit BlockCacheBackend(
-        std::shared_ptr<RAIDController> RAID_controller_ptr_)
-        : RAID_controller_ptr(RAID_controller_ptr_) {}
+        std::shared_ptr<RAIDController> raid_controller_ptr_)
+        : raid_controller_ptr(raid_controller_ptr_) {}
     ~BlockCacheBackend() override = default;
 
     std::vector<uint64_t> load_keys() override { return {}; }
     Block load_data(const uint64_t &block_no) override {
-      auto res = RAID_controller_ptr->read_block(block_no);
+      auto res = raid_controller_ptr->read_block(block_no);
       if (!res.has_value()) {
         throw std::runtime_error("failed to read block");
       }
@@ -34,23 +34,23 @@ namespace raid_fs {
     void erase_data(const uint64_t &block_no) override {}
     void save_data(const uint64_t &block_no, Block block) override {
       auto err_res =
-          RAID_controller_ptr->write_block(block_no, std::move(block.data));
+          raid_controller_ptr->write_block(block_no, std::move(block.data));
       if (err_res.has_value()) {
         throw std::runtime_error("failed to read block");
       }
     }
 
   private:
-    std::shared_ptr<RAIDController> RAID_controller_ptr;
+    std::shared_ptr<RAIDController> raid_controller_ptr;
   };
 
   class BlockCache : public ::cyy::algorithm::cache<uint64_t, Block> {
   public:
     explicit BlockCache(
         size_t capacity,
-        const std::shared_ptr<RAIDController> &RAID_controller_ptr)
+        const std::shared_ptr<RAIDController> &raid_controller_ptr)
         : cyy::algorithm::cache<uint64_t, Block>(
-              std::make_unique<BlockCacheBackend>(RAID_controller_ptr)) {
+              std::make_unique<BlockCacheBackend>(raid_controller_ptr)) {
       this->set_in_memory_number(capacity);
     }
     ~BlockCache() override = default;

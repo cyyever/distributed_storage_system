@@ -1,8 +1,9 @@
 ---
 
-disk_capacity: 1GB
+disk_capacity: 10GB
 filesystem:
   port: 60000
+  block_pool_size: 1GB
   block_size: 4KB
 RAID:
   node_number: 1

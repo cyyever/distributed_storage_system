@@ -50,6 +50,7 @@ namespace raid_fs {
     }
 
     static inline size_t block_size = 0;
+    bool dirty{false};
     block_data_type data;
   };
 

@@ -30,8 +30,8 @@ namespace raid_fs {
   };
   class RAID6Controller : public RAIDController {
   public:
-    RAID6Controller(const RAIDConfig &RAID_config) {
-      for (auto port : RAID_config.ports) {
+    RAID6Controller(const RAIDConfig &raid_config) {
+      for (auto port : raid_config.ports) {
         auto channel =
             grpc::CreateChannel(fmt::format("localhost:{}", port),
                                 ::grpc::InsecureChannelCredentials());
@@ -86,7 +86,7 @@ namespace raid_fs {
   };
 
   inline std::shared_ptr<RAIDController>
-  get_RAID_controller(const RAIDConfig &RAID_config) {
-    return std::make_shared<RAID6Controller>(RAID_config);
+  get_RAID_controller(const RAIDConfig &raid_config) {
+    return std::make_shared<RAID6Controller>(raid_config);
   }
 } // namespace raid_fs
