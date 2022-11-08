@@ -5,11 +5,14 @@
  */
 #pragma once
 
+#include <cassert>
 #include <optional>
 #include <variant>
 
+#include <cyy/naive_lib/log/log.hpp>
 #include <fmt/format.h>
 #include <grpc/grpc.h>
+#include <grpcpp/client_context.h>
 #include <grpcpp/create_channel.h>
 #include <grpcpp/security/credentials.h>
 
@@ -20,14 +23,14 @@ namespace raid_fs {
   class RAIDController {
   public:
     virtual ~RAIDController() = default;
-    virtual std::variant<Error, std::string> read_block(size_t block_no) = 0;
-    virtual std::optional<Error> write_block(size_t block_no,
+    virtual std::variant<Error, std::string> read_block(uint64_t block_no) = 0;
+    virtual std::optional<Error> write_block(uint64_t block_no,
                                              std::string &&block) = 0;
   };
   class RAID6Controller : public RAIDController {
   public:
-    RAID6Controller(const RAIDConfig &raid_config) {
-      for (auto port : raid_config.ports) {
+    RAID6Controller(const RAIDConfig &RAID_config) {
+      for (auto port : RAID_config.ports) {
         auto channel =
             grpc::CreateChannel(fmt::format("localhost:{}", port),
                                 ::grpc::InsecureChannelCredentials());
@@ -35,10 +38,52 @@ namespace raid_fs {
       }
     }
     ~RAID6Controller() override = default;
-    /* virtual std::variant<Error, std::string> read_block(size_t block_no) = 0;
-     */
-    /* virtual std::optional<Error> write_block(size_t block_no, */
-    /*                                          std::string &&block) = 0; */
+    std::variant<Error, std::string> read_block(uint64_t block_no) override {
+      ::grpc::ClientContext context;
+      BlockReadRequest request;
+      request.set_block_no(block_no);
+      BlockReadReply reply;
+
+      auto grpc_status = stubs[0]->Read(&context, request, &reply);
+      if (!grpc_status.ok()) {
+        LOG_ERROR("read block {} failed:{}", block_no,
+                  grpc_status.error_message());
+        return {Error::ERROR_GRPC_ERROR};
+      }
+      if (reply.has_error()) {
+        return {reply.error()};
+      }
+      assert(reply.has_ok());
+
+      return {reply.ok().block()};
+    }
+    std::optional<Error> write_block(uint64_t block_no,
+                                     std::string &&block) override {
+      ::grpc::ClientContext context;
+      BlockWriteRequest request;
+      request.set_block_no(block_no);
+      request.set_block(std::move(block));
+      BlockWriteReply reply;
+
+      auto grpc_status = stubs[0]->Write(&context, request, &reply);
+      if (!grpc_status.ok()) {
+        LOG_ERROR("write block {} failed:{}", block_no,
+                  grpc_status.error_message());
+        return {Error::ERROR_GRPC_ERROR};
+      }
+      if (reply.has_error()) {
+        return {reply.error()};
+      }
+
+      return {};
+    }
+
+  private:
     std::vector<std::unique_ptr<RAIDNode::Stub>> stubs;
   };
+
+  std::unique_ptr<RAIDController>
+  get_RAID_controller(const RAIDConfig &RAID_config) {
+    return std::make_unique<RAID6Controller>(RAID_config);
+  }
 } // namespace raid_fs

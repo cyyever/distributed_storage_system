@@ -45,7 +45,7 @@ namespace raid_fs {
         response->set_error(Error::ERROR_INVALID_BLOCK);
         return ::grpc::Status::OK;
       }
-      disk[request->block_no()] = std::move(request->block());
+      disk[request->block_no()] = request->block();
       return ::grpc::Status::OK;
     }
 
