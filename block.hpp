@@ -33,8 +33,12 @@ namespace raid_fs {
   };
   static_assert(sizeof(INode) == 128);
 
+  using block_data_type = std::string;
   struct Block {
     Block() : data(block_size, '\0') { assert(block_size != 0); }
+    explicit Block(block_data_type data_) : data(std::move(data_)) {
+      assert(block_size != 0 && data.size() == block_size);
+    }
 
     Block(const Block &rhs) = default;
     Block &operator=(const Block &rhs) = default;
@@ -46,7 +50,7 @@ namespace raid_fs {
     }
 
     static inline size_t block_size = 0;
-    std::string data;
+    block_data_type data;
   };
 
   struct INodeBlock : public Block {
@@ -56,7 +60,7 @@ namespace raid_fs {
       if (idx >= block_size / sizeof(INode)) {
         throw std::range_error(fmt::format("block index {} out of range", idx));
       }
-      auto ptr = reinterpret_cast<INode *>(data.data());
+      auto *ptr = reinterpret_cast<INode *>(data.data());
       return ptr[idx];
     }
   };

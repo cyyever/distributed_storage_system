@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cassert>
+#include <expected>
 #include <optional>
 #include <variant>
 
@@ -23,7 +24,7 @@ namespace raid_fs {
   class RAIDController {
   public:
     virtual ~RAIDController() = default;
-    virtual std::variant<Error, std::string> read_block(uint64_t block_no) = 0;
+    virtual std::expected<std::string, Error> read_block(uint64_t block_no) = 0;
     virtual std::optional<Error> write_block(uint64_t block_no,
                                              std::string block) = 0;
   };
@@ -38,7 +39,7 @@ namespace raid_fs {
       }
     }
     ~RAID6Controller() override = default;
-    std::variant<Error, std::string> read_block(uint64_t block_no) override {
+    std::expected<std::string, Error> read_block(uint64_t block_no) override {
       ::grpc::ClientContext context;
       BlockReadRequest request;
       request.set_block_no(block_no);
@@ -48,14 +49,16 @@ namespace raid_fs {
       if (!grpc_status.ok()) {
         LOG_ERROR("read block {} failed:{}", block_no,
                   grpc_status.error_message());
-        return {Error::ERROR_GRPC_ERROR};
+        return std::expected<std::string, Error>{std::unexpect,
+                                                 Error::ERROR_GRPC_ERROR};
       }
       if (reply.has_error()) {
-        return {reply.error()};
+        return std::expected<std::string, Error>{std::unexpect, reply.error()};
       }
       assert(reply.has_ok());
 
-      return {reply.ok().block()};
+      return std::expected<std::string, Error>{std::in_place,
+                                               reply.ok().block()};
     }
     std::optional<Error> write_block(uint64_t block_no,
                                      std::string block) override {
@@ -82,7 +85,7 @@ namespace raid_fs {
     std::vector<std::unique_ptr<RAIDNode::Stub>> stubs;
   };
 
-  std::unique_ptr<RAIDController>
+  inline std::shared_ptr<RAIDController>
   get_RAID_controller(const RAIDConfig &RAID_config) {
     return std::make_shared<RAID6Controller>(RAID_config);
   }
