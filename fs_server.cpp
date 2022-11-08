@@ -13,8 +13,8 @@
 
 #include "block.hpp"
 #include "config.hpp"
-#include "raid_controller.hpp"
 #include "fs.grpc.pb.h"
+#include "raid_controller.hpp"
 
 namespace raid_fs {
 

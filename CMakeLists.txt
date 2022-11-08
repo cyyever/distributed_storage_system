@@ -40,8 +40,8 @@ add_executable(
 
 target_include_directories(fs_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(
-  fs_server PUBLIC protobuf::libprotobuf gRPC::grpc++_unsecure
-                   gRPC::grpc_unsecure yaml-cpp fmt::fmt CyyAlgorithmLib)
+  fs_server PUBLIC gRPC::grpc++_unsecure yaml-cpp
+                   fmt::fmt CyyAlgorithmLib)
 
 add_executable(
   raid_node_server
@@ -50,6 +50,5 @@ add_executable(
   ${error_proto_srcs})
 
 target_include_directories(raid_node_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(
-  raid_node_server PUBLIC protobuf::libprotobuf gRPC::grpc++_unsecure
-                   gRPC::grpc_unsecure yaml-cpp fmt::fmt)
+target_link_libraries(raid_node_server PUBLIC gRPC::grpc++_unsecure yaml-cpp
+                                              fmt::fmt)

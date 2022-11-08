@@ -12,6 +12,7 @@
 namespace raid_fs {
   struct alignas(128) SuperBlock {
     char FS_type[8];
+    uint16_t RAID_version;
     uint16_t FS_version;
     uint64_t bitmap_offset;
     uint64_t inode_bitmap_size;
