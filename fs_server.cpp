@@ -12,6 +12,7 @@
 #include <grpcpp/server_context.h>
 
 #include "block.hpp"
+#include "block_cache.hpp"
 #include "config.hpp"
 #include "fs.grpc.pb.h"
 #include "raid_controller.hpp"

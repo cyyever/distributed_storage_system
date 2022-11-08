@@ -25,7 +25,7 @@ namespace raid_fs {
     virtual ~RAIDController() = default;
     virtual std::variant<Error, std::string> read_block(uint64_t block_no) = 0;
     virtual std::optional<Error> write_block(uint64_t block_no,
-                                             std::string &&block) = 0;
+                                             std::string block) = 0;
   };
   class RAID6Controller : public RAIDController {
   public:
@@ -58,7 +58,7 @@ namespace raid_fs {
       return {reply.ok().block()};
     }
     std::optional<Error> write_block(uint64_t block_no,
-                                     std::string &&block) override {
+                                     std::string block) override {
       ::grpc::ClientContext context;
       BlockWriteRequest request;
       request.set_block_no(block_no);
@@ -84,6 +84,6 @@ namespace raid_fs {
 
   std::unique_ptr<RAIDController>
   get_RAID_controller(const RAIDConfig &RAID_config) {
-    return std::make_unique<RAID6Controller>(RAID_config);
+    return std::make_shared<RAID6Controller>(RAID_config);
   }
 } // namespace raid_fs
