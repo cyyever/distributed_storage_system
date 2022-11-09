@@ -23,17 +23,16 @@ namespace raid_fs {
   public:
     explicit FileSystemServiceImpl(const FileSystemConfig &fs_cfg,
                                    const RAIDConfig &raid_cfg)
-        : block_size(fs_cfg.block_size),
-          block_number(fs_cfg.disk_capacity / fs_cfg.block_size),
+        : raid_controller_ptr(get_RAID_controller(raid_cfg)),
+          block_size(fs_cfg.block_size),
+          block_number(raid_controller_ptr->get_capacity() / fs_cfg.block_size),
           block_cache(fs_cfg.block_pool_size, fs_cfg.block_size,
-                      get_RAID_controller(raid_cfg)) {
-      super_block = read_block(super_block_no);
-      /* if (!read_super_block()) { */
-      /*   throw std::runtime_error("failed to read super block"); */
-      /* } */
+                      raid_controller_ptr) {
+
       // file system is not initialized
-      /* if (super_block.FS_type != raid_fs_type) { */
-      /* } */
+      if (super_block().FS_type != raid_fs_type) {
+        make_filesystem();
+      }
     }
 
   public:
@@ -48,7 +47,14 @@ namespace raid_fs {
       }
       return res.value();
     }
-    void read_super_block() {
+    // initialize file system layout like the mkfs command
+    void make_filesystem() { LOG_WARN("initialize file system"); }
+    SuperBlock &super_block() {
+      constexpr uint64_t super_block_no = 0;
+      if (!super_block_ptr) {
+        super_block_ptr = read_block(super_block_no);
+      }
+      return super_block_ptr->as_super_block();
 
       /* super_block = {.FS_type = "RAIDFS", */
       /*              .FS_version = 0, */
@@ -59,15 +65,14 @@ namespace raid_fs {
       /*              .inode_number = 0, */
       /*              .data_table_offset = 0, */
       /*              .data_block_number = 0}; */
-      return;
     }
 
   private:
-    static constexpr uint64_t super_block_no = 0;
+    std::shared_ptr<RAIDController> raid_controller_ptr;
     size_t block_size;
     size_t block_number;
     BlockCache block_cache;
-    block_ptr_type super_block{};
+    block_ptr_type super_block_ptr{};
   };
 } // namespace raid_fs
 
