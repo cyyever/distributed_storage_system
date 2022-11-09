@@ -29,7 +29,6 @@ namespace raid_fs {
       }
       auto &block = disk[request->block_no()];
       if (block.empty()) {
-        std::cout << "use block size" << block_size << std::endl;
         block.resize(block_size, '\0');
       }
       response->mutable_ok()->set_block(block);
@@ -65,7 +64,6 @@ int main(int argc, char **argv) {
   std::vector<std::unique_ptr<grpc::Server>> servers;
   std::vector<std::unique_ptr<raid_fs::RAIDNodeServiceImpl>> services;
 
-  std::cout << cfg.ports.size() << std::endl;
   for (auto port : cfg.ports) {
     std::string server_address(fmt::format("0.0.0.0:{}", port));
     grpc::ServerBuilder builder;

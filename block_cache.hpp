@@ -39,12 +39,18 @@ namespace raid_fs {
     mapped_type load_data(const key_type &block_no) override {
       block_data_type fs_block;
       auto ratio = block_size / raid_block_size;
+      std::set<key_type> raid_block_no_set;
       for (size_t i = block_no * ratio; i < (block_no + 1) * ratio; i++) {
-        auto res = raid_controller_ptr->read_block(i);
-        if (!res.has_value()) {
-          throw std::runtime_error(fmt::format("failed to read block {}", i));
-        }
-        fs_block.append(std::move(res.value()));
+        raid_block_no_set.insert(i);
+      }
+      auto res = raid_controller_ptr->read_blocks(raid_block_no_set);
+      if (!res.has_value()) {
+        throw std::runtime_error(
+            fmt::format("failed to read block {}", block_no));
+      }
+      for (auto &[_, block] : res.value()) {
+
+        fs_block.append(std::move(block));
       }
       return std::make_shared<Block>(std::move(fs_block));
     }

@@ -7,7 +7,9 @@
 
 #include <cassert>
 #include <expected>
+#include <map>
 #include <optional>
+#include <set>
 #include <variant>
 
 #include <cyy/naive_lib/log/log.hpp>
@@ -26,7 +28,8 @@ namespace raid_fs {
     virtual ~RAIDController() = default;
     virtual size_t get_block_size() = 0;
     virtual size_t get_capacity() = 0;
-    virtual std::expected<std::string, Error> read_block(uint64_t block_no) = 0;
+    virtual std::expected<std::map<uint64_t, std::string>, Error>
+    read_blocks(const std::set<uint64_t> &block_no_set) = 0;
     virtual std::optional<Error> write_block(uint64_t block_no,
                                              std::string block) = 0;
   };
@@ -46,26 +49,35 @@ namespace raid_fs {
     size_t get_capacity() override { return block_size * block_number; }
     size_t get_block_size() override { return block_size; }
 
-    std::expected<std::string, Error> read_block(uint64_t block_no) override {
-      ::grpc::ClientContext context;
-      BlockReadRequest request;
-      request.set_block_no(block_no);
-      BlockReadReply reply;
+    std::expected<std::map<uint64_t, std::string>, Error>
+    read_blocks(const std::set<uint64_t> &block_no_set) override {
+      std::map<uint64_t, std::string> blocks;
+      for (auto block_no : block_no_set) {
 
-      auto grpc_status = stubs[0]->Read(&context, request, &reply);
-      if (!grpc_status.ok()) {
-        LOG_ERROR("read block {} failed:{}", block_no,
-                  grpc_status.error_message());
-        return std::expected<std::string, Error>{std::unexpect,
-                                                 Error::ERROR_GRPC_ERROR};
-      }
-      if (reply.has_error()) {
-        return std::expected<std::string, Error>{std::unexpect, reply.error()};
-      }
-      assert(reply.has_ok());
+        ::grpc::ClientContext context;
+        BlockReadRequest request;
+        request.set_block_no(block_no);
+        BlockReadReply reply;
 
-      return std::expected<std::string, Error>{std::in_place,
-                                               reply.ok().block()};
+        auto grpc_status = stubs[0]->Read(&context, request, &reply);
+        if (!grpc_status.ok()) {
+          LOG_ERROR("read block {} failed:{}", block_no,
+                    grpc_status.error_message());
+          return std::expected<std::map<uint64_t, std::string>, Error>{
+              std::unexpect, Error::ERROR_GRPC_ERROR};
+        }
+        if (reply.has_error()) {
+          return std::expected<std::map<uint64_t, std::string>, Error>{
+              std::unexpect, reply.error()};
+        }
+        assert(reply.has_ok());
+        blocks[block_no] = reply.ok().block();
+      }
+
+      return std::expected<std::map<uint64_t, std::string>, Error>{
+          std::in_place,
+
+          std::move(blocks)};
     }
     std::optional<Error> write_block(uint64_t block_no,
                                      std::string block) override {
