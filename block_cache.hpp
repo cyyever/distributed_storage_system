@@ -27,14 +27,13 @@ namespace raid_fs {
     }
     ~BlockCacheBackend() override = default;
 
-    std::vector<key_type> load_keys() override {
+    std::vector<key_type> get_keys() override {
+      throw std::runtime_error("shouldn't be called");
+    }
+
+    bool contains(const key_type &block_no) override {
       auto block_number = raid_controller_ptr->get_capacity() / block_size;
-      std::vector<key_type> keys;
-      keys.reserve(block_number);
-      for (size_t i = 0; i < block_number; i++) {
-        keys.push_back(i);
-      }
-      return keys;
+      return block_no < block_number;
     }
     mapped_type load_data(const key_type &block_no) override {
       block_data_type fs_block;
@@ -49,13 +48,14 @@ namespace raid_fs {
             fmt::format("failed to read block {}", block_no));
       }
       for (auto &[_, block] : res.value()) {
-
         fs_block.append(std::move(block));
       }
       return std::make_shared<Block>(std::move(fs_block));
     }
     void clear_data() override {}
-    void erase_data(const key_type &) override {}
+    void erase_data(const key_type &) override {
+      throw std::runtime_error("shouldn't be called");
+    }
     void save_data(const key_type &block_no, mapped_type block) override {
       assert(block->dirty);
       auto err_res =
