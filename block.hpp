@@ -53,6 +53,7 @@ namespace raid_fs {
     bool dirty{false};
     block_data_type data;
   };
+  using block_ptr_type = std::shared_ptr<Block>;
 
   struct INodeBlock : public Block {
     INodeBlock() { assert(block_size % sizeof(INode) == 0); }

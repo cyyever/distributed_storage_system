@@ -26,11 +26,12 @@ namespace raid_fs {
         : block_size(fs_cfg.block_size),
           block_number(fs_cfg.disk_capacity / fs_cfg.block_size),
           block_cache(fs_cfg.block_pool_size, get_RAID_controller(raid_cfg)) {
+      super_block = read_block(0);
       /* if (!read_super_block()) { */
       /*   throw std::runtime_error("failed to read super block"); */
       /* } */
       // file system is not initialized
-      /* if (super_blk.FS_type != raid_fs_type) { */
+      /* if (super_block.FS_type != raid_fs_type) { */
       /* } */
     }
 
@@ -38,7 +39,7 @@ namespace raid_fs {
     static constexpr auto raid_fs_type = "RAIDFS";
 
   private:
-    Block read_block(size_t block_no) {
+    block_ptr_type read_block(size_t block_no) {
       auto res = block_cache.get(block_no);
       if (!res.has_value()) {
         throw std::runtime_error(
@@ -47,9 +48,8 @@ namespace raid_fs {
       return res.value();
     }
     void read_super_block() {
-      super_blk = read_block(0);
 
-      /* super_blk = {.FS_type = "RAIDFS", */
+      /* super_block = {.FS_type = "RAIDFS", */
       /*              .FS_version = 0, */
       /*              .bitmap_offset = 0, */
       /*              .inode_bitmap_size = 0, */
@@ -62,10 +62,11 @@ namespace raid_fs {
     }
 
   private:
+    static constexpr uint64_t super_block_no = 0;
     size_t block_size;
     size_t block_number;
     BlockCache block_cache;
-    Block super_blk{};
+    block_ptr_type super_block{};
   };
 } // namespace raid_fs
 
