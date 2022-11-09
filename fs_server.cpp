@@ -25,8 +25,10 @@ namespace raid_fs {
                                    const RAIDConfig &raid_cfg)
         : block_size(fs_cfg.block_size),
           block_number(fs_cfg.disk_capacity / fs_cfg.block_size),
-          block_cache(fs_cfg.block_pool_size, get_RAID_controller(raid_cfg)) {
-      super_block = read_block(0);
+          block_cache(fs_cfg.block_pool_size, fs_cfg.block_size,
+                      get_RAID_controller(raid_cfg)) {
+      super_block = read_block(super_block_no);
+      puts("aaaaaaaaaa");
       /* if (!read_super_block()) { */
       /*   throw std::runtime_error("failed to read super block"); */
       /* } */

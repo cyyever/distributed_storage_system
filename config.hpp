@@ -23,14 +23,24 @@ namespace raid_fs {
     static size_t parse_size(const YAML::Node &node, const std::string &key) {
       size_t result = 0;
       std::smatch match;
-      std::regex re("^([0-9]+)([KG]?)B$");
+      std::regex re("^([0-9]+)([KMGT]?)B$");
       auto config_value = node[key].as<std::string>();
       if (std::regex_search(config_value, match, re)) {
         result = std::stoull(match.str(1));
         if (match.str(2) == "K") {
           result *= 1024;
+        } else if (match.str(2) == "M") {
+          result *= 1024;
+          result *= 1024;
         } else if (match.str(2) == "G") {
-          result *= 1024 * 1024 * 1024;
+          result *= 1024;
+          result *= 1024;
+          result *= 1024;
+        } else if (match.str(2) == "T") {
+          result *= 1024;
+          result *= 1024;
+          result *= 1024;
+          result *= 1024;
         }
         return result;
       }

@@ -17,7 +17,7 @@ namespace raid_fs {
         : block_size(block_size_) {
       block_number = disk_capacity_ / block_size;
       disk.resize(block_number);
-    };
+    }
 
     ~RAIDNodeServiceImpl() override = default;
     ::grpc::Status Read(::grpc::ServerContext *context,
@@ -29,6 +29,7 @@ namespace raid_fs {
       }
       auto &block = disk[request->block_no()];
       if (block.empty()) {
+        std::cout << "use block size" << block_size << std::endl;
         block.resize(block_size, '\0');
       }
       response->mutable_ok()->set_block(block);

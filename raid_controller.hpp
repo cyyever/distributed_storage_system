@@ -24,6 +24,8 @@ namespace raid_fs {
   class RAIDController {
   public:
     virtual ~RAIDController() = default;
+    virtual size_t get_block_size() = 0;
+    virtual size_t get_capacity() = 0;
     virtual std::expected<std::string, Error> read_block(uint64_t block_no) = 0;
     virtual std::optional<Error> write_block(uint64_t block_no,
                                              std::string block) = 0;
@@ -31,6 +33,8 @@ namespace raid_fs {
   class RAID6Controller : public RAIDController {
   public:
     RAID6Controller(const RAIDConfig &raid_config) {
+      block_number = raid_config.disk_capacity / raid_config.block_size;
+      block_size = raid_config.block_size;
       for (auto port : raid_config.ports) {
         auto channel =
             grpc::CreateChannel(fmt::format("localhost:{}", port),
@@ -39,6 +43,9 @@ namespace raid_fs {
       }
     }
     ~RAID6Controller() override = default;
+    size_t get_capacity() override { return block_size * block_number; }
+    size_t get_block_size() override { return block_size; }
+
     std::expected<std::string, Error> read_block(uint64_t block_no) override {
       ::grpc::ClientContext context;
       BlockReadRequest request;
@@ -83,6 +90,8 @@ namespace raid_fs {
 
   private:
     std::vector<std::unique_ptr<RAIDNode::Stub>> stubs;
+    size_t block_number{};
+    size_t block_size{};
   };
 
   inline std::shared_ptr<RAIDController>
