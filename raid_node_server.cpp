@@ -45,12 +45,13 @@ namespace raid_fs {
         return ::grpc::Status::OK;
       }
       if (request->block().size() != disk_ptr->get_block_size()) {
+        LOG_ERROR("block size mismatch:{} {}", request->block().size(),
+                  disk_ptr->get_block_size());
         response->set_error(Error::ERROR_INVALID_BLOCK);
         return ::grpc::Status::OK;
       }
       auto res = disk_ptr->write(request->block_no(), request->block());
       if (res.has_value()) {
-
         LOG_ERROR("write block failed:{}",
                   ::cyy::naive_lib::util::errno_to_str(res.value()));
         response->set_error(Error::ERROR_OS_ERROR);

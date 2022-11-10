@@ -30,8 +30,8 @@ namespace raid_fs {
     virtual size_t get_capacity() = 0;
     virtual std::expected<std::map<uint64_t, std::string>, Error>
     read_blocks(const std::set<uint64_t> &block_no_set) = 0;
-    virtual std::optional<Error> write_block(uint64_t block_no,
-                                             std::string block) = 0;
+    virtual std::optional<Error>
+    write_blocks(const std::map<uint64_t, std::string> &blocks) = 0;
   };
   class RAID6Controller : public RAIDController {
   public:
@@ -73,24 +73,26 @@ namespace raid_fs {
       }
       return blocks;
     }
-    std::optional<Error> write_block(uint64_t block_no,
-                                     std::string block) override {
-      ::grpc::ClientContext context;
-      BlockWriteRequest request;
-      request.set_block_no(block_no);
-      request.set_block(std::move(block));
-      BlockWriteReply reply;
+    std::optional<Error>
+    write_blocks(const std::map<uint64_t, std::string> &blocks) override {
+      for (auto const &[block_no, block] : blocks) {
+        ::grpc::ClientContext context;
+        BlockWriteRequest request;
+        request.set_block_no(block_no);
+        request.set_block(std::move(block));
+        BlockWriteReply reply;
 
-      auto grpc_status = stubs[0]->Write(&context, request, &reply);
-      if (!grpc_status.ok()) {
-        LOG_ERROR("write block {} failed:{}", block_no,
-                  grpc_status.error_message());
-        return {Error::ERROR_GRPC_ERROR};
+        auto grpc_status = stubs[0]->Write(&context, request, &reply);
+        if (!grpc_status.ok()) {
+          LOG_ERROR("write block {} failed:{}", block_no,
+                    grpc_status.error_message());
+          return {Error::ERROR_GRPC_ERROR};
+        }
+        if (reply.has_error()) {
+          LOG_ERROR("write block {} failed:{}", block_no, reply.error());
+          return {reply.error()};
+        }
       }
-      if (reply.has_error()) {
-        return {reply.error()};
-      }
-
       return {};
     }
 

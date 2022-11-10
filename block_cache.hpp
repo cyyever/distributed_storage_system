@@ -58,10 +58,16 @@ namespace raid_fs {
     }
     void save_data(const key_type &block_no, mapped_type block) override {
       assert(block->dirty);
-      auto err_res =
-          raid_controller_ptr->write_block(block_no, std::move(block->data));
+      auto ratio = block_size / raid_block_size;
+      std::map<key_type, std::string> raid_blocks;
+      for (size_t i = block_no * ratio; i < (block_no + 1) * ratio; i++) {
+        raid_blocks[i] =
+            block->data.substr(i * raid_block_size, raid_block_size);
+      }
+
+      auto err_res = raid_controller_ptr->write_blocks(raid_blocks);
       if (err_res.has_value()) {
-        throw std::runtime_error("failed to read block");
+        throw std::runtime_error("failed to write block");
       }
     }
 
