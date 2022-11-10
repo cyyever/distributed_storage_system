@@ -67,8 +67,7 @@ namespace raid_fs {
   public:
     Disk(size_t disk_capacity_, size_t block_size_, std::string file_name)
         : VirtualDisk(disk_capacity_, block_size_) {
-      fd =
-          open(file_name.c_str(), O_CREAT | O_DIRECT | O_LARGEFILE | O_NOATIME);
+      fd = open(file_name.c_str(), O_CREAT | O_NOATIME | O_CLOEXEC);
       if (fd < 0) {
         LOG_ERROR("open disk {} failed:{}", file_name,
                   ::cyy::naive_lib::util::errno_to_str(errno));
