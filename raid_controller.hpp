@@ -63,21 +63,16 @@ namespace raid_fs {
         if (!grpc_status.ok()) {
           LOG_ERROR("read block {} failed:{}", block_no,
                     grpc_status.error_message());
-          return std::expected<std::map<uint64_t, std::string>, Error>{
-              std::unexpect, Error::ERROR_GRPC_ERROR};
+          return std::unexpected(Error::ERROR_GRPC_ERROR);
         }
         if (reply.has_error()) {
-          return std::expected<std::map<uint64_t, std::string>, Error>{
-              std::unexpect, reply.error()};
+          return std::unexpected(reply.error());
         }
         assert(reply.has_ok());
         blocks[block_no] = reply.ok().block();
       }
 
-      return std::expected<std::map<uint64_t, std::string>, Error>{
-          std::in_place,
-
-          std::move(blocks)};
+      return blocks;
     }
     std::optional<Error> write_block(uint64_t block_no,
                                      std::string block) override {
