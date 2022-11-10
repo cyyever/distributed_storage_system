@@ -4,6 +4,9 @@
  * \brief Implementation of a file system
  */
 
+#include <shared_mutex>
+
+#include <cyy/naive_lib/util/runnable.hpp>
 #include <fmt/format.h>
 #include <grpc/grpc.h>
 #include <grpcpp/security/server_credentials.h>
@@ -21,22 +24,52 @@ namespace raid_fs {
 
   class FileSystemServiceImpl final : public raid_fs::FileSystem::Service {
   public:
-    explicit FileSystemServiceImpl(const FileSystemConfig &fs_cfg,
-                                   const RAIDConfig &raid_cfg)
-        : raid_controller_ptr(get_RAID_controller(raid_cfg)),
-          block_size(fs_cfg.block_size),
+    FileSystemServiceImpl(
+        const FileSystemConfig &fs_cfg,
+        const std::shared_ptr<RAIDController> &raid_controller_ptr)
+        : block_size(fs_cfg.block_size),
           block_number(raid_controller_ptr->get_capacity() / fs_cfg.block_size),
           block_cache(fs_cfg.block_pool_size, fs_cfg.block_size,
-                      raid_controller_ptr) {
+                      raid_controller_ptr),
+          sync_thread(this) {
 
       // file system is not initialized
       if (std::string(super_block().fs_type) != raid_fs_type) {
         make_filesystem();
       }
+      sync_thread.start("sync thread");
     }
 
-  public:
-    static constexpr auto raid_fs_type = "RAIDFS";
+    ~FileSystemServiceImpl() { sync_thread.stop(); }
+
+  private:
+    class SyncThread final : public cyy::naive_lib::runnable {
+    public:
+      SyncThread(FileSystemServiceImpl *impl_ptr_) : impl_ptr(impl_ptr_) {}
+      ~SyncThread() override { stop(); }
+
+    private:
+      void run(const std::stop_token &st) override {
+        while (true) {
+          std::unique_lock lk(impl_ptr->block_mu);
+          if (cv.wait_for(lk, st, std::chrono::minutes(5),
+                          [&st]() { return st.stop_requested(); })) {
+            return;
+          }
+          if (!impl_ptr->dirty_blocks.empty()) {
+            for (const auto &[block_no, block] : impl_ptr->dirty_blocks) {
+              impl_ptr->block_cache.emplace(block_no, block);
+            }
+            impl_ptr->block_cache.flush();
+            impl_ptr->dirty_blocks.clear();
+          }
+        }
+      }
+
+    private:
+      std::condition_variable_any cv;
+      FileSystemServiceImpl *impl_ptr;
+    };
 
   private:
     block_ptr_type read_block(size_t block_no) {
@@ -100,13 +133,15 @@ namespace raid_fs {
     }
 
   private:
-    std::shared_ptr<RAIDController> raid_controller_ptr;
-    std::unordered_map<uint64_t, block_ptr_type> dirty_blocks;
+    friend SyncThread;
+    static constexpr auto raid_fs_type = "RAIDFS";
     static constexpr uint64_t super_block_no = 0;
     size_t block_size;
     size_t block_number;
     BlockCache block_cache;
-    block_ptr_type super_block_ptr{};
+    std::unordered_map<uint64_t, block_ptr_type> dirty_blocks;
+    std::shared_mutex block_mu;
+    SyncThread sync_thread;
   };
 } // namespace raid_fs
 
@@ -120,7 +155,7 @@ int main(int argc, char **argv) {
   raid_fs::Block::block_size = cfg.block_size;
   std::string server_address(fmt::format("0.0.0.0:{}", cfg.port));
 
-  raid_fs::FileSystemServiceImpl service(cfg, raid_cfg);
+  raid_fs::FileSystemServiceImpl service(cfg, get_RAID_controller(raid_cfg));
 
   grpc::ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
