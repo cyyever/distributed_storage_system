@@ -73,15 +73,18 @@ namespace raid_fs {
         blk.data_table_offset = blk.inode_table_offset + blk.inode_number;
         blk.data_block_number = block_number - blk.data_table_offset;
         if (blk.data_block_number > max_recordable_block_number) {
-          LOG_DEBUG("{} {}", blk.data_block_number, max_recordable_block_number);
+          LOG_DEBUG("{} {}", blk.data_block_number,
+                    max_recordable_block_number);
           blk.inode_table_offset += 1;
           max_recordable_block_number += block_size * 8;
         } else {
           break;
         }
       }
-      LOG_WARN("allocate {} inodes and {} data blocks, total {} blocks, bookkeeping {} blocks",
-               blk.inode_number, blk.data_block_number, block_number,block_number- blk.inode_number- blk.data_block_number);
+      LOG_WARN("allocate {} inodes and {} data blocks, total {} blocks, "
+               "{} blocks for bookkeeping",
+               blk.inode_number, blk.data_block_number, block_number,
+               block_number - blk.inode_number - blk.data_block_number);
     }
     SuperBlock &modificable_super_block() {
       auto ptr = read_block(super_block_no);

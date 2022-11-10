@@ -9,3 +9,4 @@ RAID:
   node_number: 1
   first_node_port: 60001
   block_size: 512B
+  use_memory_disk: true

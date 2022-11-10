@@ -1,4 +1,6 @@
 
+#include <cyy/naive_lib/log/log.hpp>
+#include <cyy/naive_lib/util/error.hpp>
 #include <fmt/format.h>
 #include <grpc/grpc.h>
 #include <grpcpp/security/server_credentials.h>
@@ -7,52 +9,57 @@
 #include <grpcpp/server_context.h>
 
 #include "config.hpp"
+#include "disk.hpp"
 #include "raid.grpc.pb.h"
 
 namespace raid_fs {
 
   class RAIDNodeServiceImpl final : public raid_fs::RAIDNode::Service {
   public:
-    explicit RAIDNodeServiceImpl(size_t disk_capacity_, size_t block_size_)
-        : block_size(block_size_) {
-      block_number = disk_capacity_ / block_size;
-      disk.resize(block_number);
-    }
+    explicit RAIDNodeServiceImpl(const RAIDConfig &config)
+        : disk_ptr(get_disk(config)) {}
 
     ~RAIDNodeServiceImpl() override = default;
     ::grpc::Status Read(::grpc::ServerContext *context,
                         const ::raid_fs::BlockReadRequest *request,
                         ::raid_fs::BlockReadReply *response) override {
-      if (request->block_no() >= disk.size()) {
+      if (request->block_no() >= disk_ptr->get_block_number()) {
         response->set_error(Error::ERROR_OUT_OF_RANGE);
         return ::grpc::Status::OK;
       }
-      auto &block = disk[request->block_no()];
-      if (block.empty()) {
-        block.resize(block_size, '\0');
+      auto res = disk_ptr->read(request->block_no());
+      if (res.has_value()) {
+        response->mutable_ok()->set_block(std::move(res.value()));
+        return ::grpc::Status::OK;
       }
-      response->mutable_ok()->set_block(block);
+      LOG_ERROR("read block failed:{}",
+                ::cyy::naive_lib::util::errno_to_str(res.error()));
+      response->set_error(Error::ERROR_OS_ERROR);
       return ::grpc::Status::OK;
     }
     ::grpc::Status Write(::grpc::ServerContext *context,
                          const ::raid_fs::BlockWriteRequest *request,
                          ::raid_fs::BlockWriteReply *response) override {
-      if (request->block_no() >= disk.size()) {
+      if (request->block_no() >= disk_ptr->get_block_number()) {
         response->set_error(Error::ERROR_OUT_OF_RANGE);
         return ::grpc::Status::OK;
       }
-      if (request->block().size() != block_size) {
+      if (request->block().size() != disk_ptr->get_block_size()) {
         response->set_error(Error::ERROR_INVALID_BLOCK);
         return ::grpc::Status::OK;
       }
-      disk[request->block_no()] = request->block();
+      auto res = disk_ptr->write(request->block_no(), request->block());
+      if (res.has_value()) {
+
+        LOG_ERROR("write block failed:{}",
+                  ::cyy::naive_lib::util::errno_to_str(res.value()));
+        response->set_error(Error::ERROR_OS_ERROR);
+      }
       return ::grpc::Status::OK;
     }
 
   private:
-    std::vector<std::string> disk;
-    size_t block_number{};
-    size_t block_size;
+    std::shared_ptr<VirtualDisk> disk_ptr;
   }; // namespace raid_fs
 } // namespace raid_fs
 int main(int argc, char **argv) {
@@ -67,8 +74,7 @@ int main(int argc, char **argv) {
   for (auto port : cfg.ports) {
     std::string server_address(fmt::format("0.0.0.0:{}", port));
     grpc::ServerBuilder builder;
-    services.emplace_back(std::make_unique<raid_fs::RAIDNodeServiceImpl>(
-        cfg.disk_capacity, cfg.block_size));
+    services.emplace_back(std::make_unique<raid_fs::RAIDNodeServiceImpl>(cfg));
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
     builder.RegisterService(services.back().get());
     servers.emplace_back(builder.BuildAndStart());

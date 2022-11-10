@@ -78,8 +78,10 @@ namespace raid_fs {
       if (disk_capacity % block_size != 0) {
         throw std::invalid_argument("disk can't be partitioned into blocks");
       }
+      use_memory_disk = yaml_node["use_memory_disk"].as<bool>();
     }
     std::vector<uint16_t> ports;
     size_t block_size{};
+    bool use_memory_disk{};
   };
 } // namespace raid_fs

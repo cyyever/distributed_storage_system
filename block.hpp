@@ -9,6 +9,8 @@
 #include <string>
 
 #include <fmt/format.h>
+
+#include "type.hpp"
 namespace raid_fs {
   struct alignas(128) SuperBlock {
     char fs_type[8];
@@ -29,7 +31,6 @@ namespace raid_fs {
   };
   static_assert(sizeof(INode) == 128);
 
-  using block_data_type = std::string;
   struct Block {
     Block() : data(block_size, '\0') { assert(block_size != 0); }
     explicit Block(block_data_type data_) : data(std::move(data_)) {
