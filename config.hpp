@@ -79,9 +79,11 @@ namespace raid_fs {
         throw std::invalid_argument("disk can't be partitioned into blocks");
       }
       use_memory_disk = yaml_node["use_memory_disk"].as<bool>();
+      disk_path_prefix = yaml_node["disk_path_prefix"].as<std::string>();
     }
     std::vector<uint16_t> ports;
     size_t block_size{};
     bool use_memory_disk{};
+    std::string disk_path_prefix{};
   };
 } // namespace raid_fs

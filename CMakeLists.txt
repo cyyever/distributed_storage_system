@@ -57,3 +57,5 @@ target_include_directories(raid_node_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(
   raid_node_server PUBLIC gRPC::grpc++_unsecure yaml-cpp fmt::fmt
                           CyyNaiveLib::log CyyNaiveLib::util)
+
+target_compile_definitions(raid_node_server PRIVATE _LARGEFILE64_SOURCE)
