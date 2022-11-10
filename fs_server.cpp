@@ -30,7 +30,7 @@ namespace raid_fs {
                       raid_controller_ptr) {
 
       // file system is not initialized
-      if (super_block().FS_type != raid_fs_type) {
+      if (std::string(super_block().fs_type) != raid_fs_type) {
         make_filesystem();
       }
     }
@@ -40,6 +40,10 @@ namespace raid_fs {
 
   private:
     block_ptr_type read_block(size_t block_no) {
+      auto it = dirty_blocks.find(block_no);
+      if (it != dirty_blocks.end()) {
+        return it->second;
+      }
       auto res = block_cache.get(block_no);
       if (!res.has_value()) {
         throw std::runtime_error(
@@ -48,27 +52,54 @@ namespace raid_fs {
       return res.value();
     }
     // initialize file system layout like the mkfs command
-    void make_filesystem() { LOG_WARN("initialize file system"); }
-    SuperBlock &super_block() {
-      constexpr uint64_t super_block_no = 0;
-      if (!super_block_ptr) {
-        super_block_ptr = read_block(super_block_no);
+    void make_filesystem() {
+      LOG_WARN("initialize file system");
+      auto &blk = modificable_super_block();
+      strcpy(blk.fs_type, raid_fs_type);
+      blk.fs_version = 0;
+      blk.bitmap_byte_offset = sizeof(SuperBlock);
+      blk.inode_number = block_number * 0.01;
+      if (blk.inode_number == 0) {
+        blk.inode_number = 1;
       }
-      return super_block_ptr->as_super_block();
-
-      /* super_block = {.FS_type = "RAIDFS", */
-      /*              .FS_version = 0, */
-      /*              .bitmap_offset = 0, */
-      /*              .inode_bitmap_size = 0, */
-      /*              .data_bitmap_size = 0, */
-      /*              .inode_table_offset = 0, */
-      /*              .inode_number = 0, */
-      /*              .data_table_offset = 0, */
-      /*              .data_block_number = 0}; */
+      blk.inode_number = (blk.inode_number + 7) / 8 * 8;
+      assert(blk.inode_number % 8 == 0 && blk.inode_number > 0);
+      auto data_bitmap_byte_offset =
+          blk.bitmap_byte_offset + blk.inode_number / 8;
+      auto max_recordable_block_number =
+          (block_size - data_bitmap_byte_offset % block_size) * 8;
+      blk.inode_table_offset = data_bitmap_byte_offset / block_size + 1;
+      while (true) {
+        blk.data_table_offset = blk.inode_table_offset + blk.inode_number;
+        blk.data_block_number = block_number - blk.data_table_offset;
+        if (blk.data_block_number > max_recordable_block_number) {
+          LOG_DEBUG("{} {}", blk.data_block_number, max_recordable_block_number);
+          blk.inode_table_offset += 1;
+          max_recordable_block_number += block_size * 8;
+        } else {
+          break;
+        }
+      }
+      LOG_WARN("allocate {} inodes and {} data blocks, total {} blocks, bookkeeping {} blocks",
+               blk.inode_number, blk.data_block_number, block_number,block_number- blk.inode_number- blk.data_block_number);
+    }
+    SuperBlock &modificable_super_block() {
+      auto ptr = read_block(super_block_no);
+      mark_dirty(super_block_no, ptr);
+      return ptr->as_super_block();
+    }
+    const SuperBlock &super_block() {
+      return read_block(super_block_no)->as_super_block();
+    }
+    void mark_dirty(uint64_t block_no, const block_ptr_type &block_ptr) {
+      block_ptr->dirty = true;
+      dirty_blocks[block_no] = block_ptr;
     }
 
   private:
     std::shared_ptr<RAIDController> raid_controller_ptr;
+    std::unordered_map<uint64_t, block_ptr_type> dirty_blocks;
+    static constexpr uint64_t super_block_no = 0;
     size_t block_size;
     size_t block_number;
     BlockCache block_cache;

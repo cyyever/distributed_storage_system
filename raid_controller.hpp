@@ -71,7 +71,6 @@ namespace raid_fs {
         assert(reply.has_ok());
         blocks[block_no] = reply.ok().block();
       }
-
       return blocks;
     }
     std::optional<Error> write_block(uint64_t block_no,
