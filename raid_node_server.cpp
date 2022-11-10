@@ -16,8 +16,8 @@ namespace raid_fs {
 
   class RAIDNodeServiceImpl final : public raid_fs::RAIDNode::Service {
   public:
-    explicit RAIDNodeServiceImpl(const RAIDConfig &config)
-        : disk_ptr(get_disk(config)) {}
+    explicit RAIDNodeServiceImpl(const RAIDConfig &config, size_t service_id)
+        : disk_ptr(get_disk(config, service_id)) {}
 
     ~RAIDNodeServiceImpl() override = default;
     ::grpc::Status Read(::grpc::ServerContext *context,
@@ -60,7 +60,7 @@ namespace raid_fs {
 
   private:
     std::shared_ptr<VirtualDisk> disk_ptr;
-  }; // namespace raid_fs
+  };
 } // namespace raid_fs
 int main(int argc, char **argv) {
   if (argc <= 1) {
@@ -71,10 +71,13 @@ int main(int argc, char **argv) {
   std::vector<std::unique_ptr<grpc::Server>> servers;
   std::vector<std::unique_ptr<raid_fs::RAIDNodeServiceImpl>> services;
 
+  size_t service_id = 0;
   for (auto port : cfg.ports) {
     std::string server_address(fmt::format("0.0.0.0:{}", port));
     grpc::ServerBuilder builder;
-    services.emplace_back(std::make_unique<raid_fs::RAIDNodeServiceImpl>(cfg));
+    services.emplace_back(
+        std::make_unique<raid_fs::RAIDNodeServiceImpl>(cfg, service_id));
+    service_id++;
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
     builder.RegisterService(services.back().get());
     servers.emplace_back(builder.BuildAndStart());
