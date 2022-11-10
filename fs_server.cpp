@@ -56,13 +56,7 @@ namespace raid_fs {
                           [&st]() { return st.stop_requested(); })) {
             return;
           }
-          if (!impl_ptr->dirty_blocks.empty()) {
-            for (const auto &[block_no, block] : impl_ptr->dirty_blocks) {
-              impl_ptr->block_cache.emplace(block_no, block);
-            }
-            impl_ptr->block_cache.flush();
-            impl_ptr->dirty_blocks.clear();
-          }
+          impl_ptr->block_cache.flush();
         }
       }
 
@@ -70,13 +64,32 @@ namespace raid_fs {
       std::condition_variable_any cv;
       FileSystemServiceImpl *impl_ptr;
     };
+    class BlockReference final {
+    public:
+      BlockReference(uint64_t block_no_, block_ptr_type block_ptr_,
+                     BlockCache &cache_)
+          : block_no(block_no_), block_ptr{block_ptr_}, cache{cache_} {}
+
+      BlockReference(const BlockReference &) = delete;
+      BlockReference &operator=(const BlockReference &) = delete;
+
+      BlockReference(BlockReference &&) noexcept = delete;
+      BlockReference &operator=(BlockReference &&) noexcept = delete;
+
+      ~BlockReference() {
+        block_ptr->dirty = true;
+        cache.emplace(block_no, block_ptr);
+      }
+      Block *operator->() const { return block_ptr.get(); }
+
+    private:
+      uint64_t block_no;
+      block_ptr_type block_ptr;
+      BlockCache &cache;
+    };
 
   private:
-    block_ptr_type read_block(size_t block_no) {
-      auto it = dirty_blocks.find(block_no);
-      if (it != dirty_blocks.end()) {
-        return it->second;
-      }
+    const block_ptr_type get_block(uint64_t block_no) {
       auto res = block_cache.get(block_no);
       if (!res.has_value()) {
         throw std::runtime_error(
@@ -84,10 +97,19 @@ namespace raid_fs {
       }
       return res.value();
     }
+    BlockReference get_modifiable_block(uint64_t block_no) {
+      auto res = block_cache.get(block_no);
+      if (!res.has_value()) {
+        throw std::runtime_error(
+            fmt::format("failed to read block {}", block_no));
+      }
+      return {block_no, res.value(), block_cache};
+    }
     // initialize file system layout like the mkfs command
     void make_filesystem() {
       LOG_WARN("initialize file system");
-      auto &blk = modificable_super_block();
+      auto block_ref = get_modifiable_block(super_block_no);
+      auto &blk = block_ref->as_super_block();
       strcpy(blk.fs_type, raid_fs_type);
       blk.fs_version = 0;
       blk.bitmap_byte_offset = sizeof(SuperBlock);
@@ -119,17 +141,8 @@ namespace raid_fs {
                blk.inode_number, blk.data_block_number, block_number,
                block_number - blk.inode_number - blk.data_block_number);
     }
-    SuperBlock &modificable_super_block() {
-      auto ptr = read_block(super_block_no);
-      mark_dirty(super_block_no, ptr);
-      return ptr->as_super_block();
-    }
     const SuperBlock &super_block() {
-      return read_block(super_block_no)->as_super_block();
-    }
-    void mark_dirty(uint64_t block_no, const block_ptr_type &block_ptr) {
-      block_ptr->dirty = true;
-      dirty_blocks[block_no] = block_ptr;
+      return get_block(super_block_no)->as_super_block();
     }
 
   private:
@@ -139,7 +152,6 @@ namespace raid_fs {
     size_t block_size;
     size_t block_number;
     BlockCache block_cache;
-    std::unordered_map<uint64_t, block_ptr_type> dirty_blocks;
     std::shared_mutex block_mu;
     SyncThread sync_thread;
   };
