@@ -12,6 +12,22 @@ import "google/protobuf/empty.proto";
    separated by '/' , where each path component has a max length of 127 chars.
    Also paths are case-sensitive, relative paths like '.' and '..' are not supported.
 */
+
+message CreateRequest {
+  string path = 1;
+}
+
+message CreateOKReply {
+  uint64 fd = 1;
+}
+
+message CreateReply {
+  oneof test_oneof {
+    Error error = 1;
+    CreateOKReply ok = 2;
+  }
+}
+
 message OpenRequest {
   string path = 1;
   bool o_create = 2;
@@ -70,6 +86,8 @@ message RemoveRequest {
 }
 
 service FileSystem {
+  /* Create a file and return the fd. */
+  rpc Create(CreateRequest) returns (CreateReply) {}
   /* Open a file and return the fd. */
   /* o_create: If set to True, then create the file and parent directories on the fly. */
   rpc Open(OpenRequest) returns (OpenReply) {}
