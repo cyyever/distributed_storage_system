@@ -156,18 +156,13 @@ namespace raid_fs {
       }
 
       // allocate inode for the root directory '/'
-      auto inode_opt = allocate_inode();
+      auto inode_opt =
+          allocate_and_initialize_file_metadata(file_type::directory);
       if (!inode_opt.has_value()) {
         throw std::runtime_error("failed to allocate space for /");
       }
-      assert(inode_opt.value() == 0);
       root_inode_no = inode_opt.value();
-      auto [inode_ptr, block_ref] = get_mutable_inode(root_inode_no);
-
-      // zero initialization
-      *inode_ptr = INode{};
-      inode_ptr->type = file_type::directory;
-      // allocate a data block in advance
+      assert(root_inode_no == 0);
     }
 
     std::optional<uint64_t>
