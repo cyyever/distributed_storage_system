@@ -23,10 +23,15 @@ namespace raid_fs {
     uint64_t data_block_number;
   };
   static_assert(sizeof(SuperBlock) == 128);
+  enum class file_type : uint8_t {
+    directory = 0,
+    file = 1,
+  };
 
   struct alignas(128) INode {
-    uint64_t size{};
-    time_t mtime{}; // time of last modification
+    file_type type{};
+    uint64_t size{}; // file size or the number of files in the directory
+    /* time_t mtime{}; // time of last modification */
     uint64_t block_ptrs[14]{};
   };
   static_assert(sizeof(INode) == 128);

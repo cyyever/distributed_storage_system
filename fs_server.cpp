@@ -36,7 +36,7 @@ namespace raid_fs {
           sync_thread(this) {
 
       // file system is not initialized
-      if (std::string(super_block().fs_type) != raid_fs_type) {
+      if (std::string(get_super_block().fs_type) != raid_fs_type) {
         make_filesystem();
       }
       sync_thread.start("sync thread");
@@ -77,6 +77,26 @@ namespace raid_fs {
       assert(res.value().get() != nullptr);
       return res.value();
     }
+
+    std::pair<INode *, BlockCache::value_reference>
+    get_mutable_inode(uint64_t inode_no) {
+      auto const super_block = get_super_block();
+      assert(inode_no < super_block.inode_number);
+      auto inodes_per_block = block_size / sizeof(INodeBlock);
+      auto block_no =
+          super_block.inode_table_offset + inode_no / inodes_per_block;
+      auto block_ref = get_mutable_block(block_no);
+      auto inode_ptr = reinterpret_cast<INode *>(block_ref->data.data()) +
+                       (inode_no % inodes_per_block);
+      return {inode_ptr, std::move(block_ref)};
+    }
+
+    INode get_inode(uint64_t inode_no) {
+      auto [inode_ptr, block_ref] = get_mutable_inode(inode_no);
+      block_ref.cancel_save();
+      return *inode_ptr;
+    }
+
     BlockCache::value_reference get_mutable_block(uint64_t block_no) {
       auto res = block_cache.mutable_get(block_no);
       if (!res.has_value()) {
@@ -123,20 +143,27 @@ namespace raid_fs {
                  blk.inode_number, blk.data_block_number, block_number,
                  block_number - blk.inode_number - blk.data_block_number);
       }
+
       // allocate inode for the root directory '/'
-      auto inode_res = allocate_inode();
-      if (!inode_res.has_value()) {
+      auto inode_opt = allocate_inode();
+      if (!inode_opt.has_value()) {
         throw std::runtime_error("failed to allocate space for /");
       }
-      assert(inode_res.value() == 0);
+      assert(inode_opt.value() == 0);
+      root_inode_no = inode_opt.value();
+      auto [inode_ptr, block_ref] = get_mutable_inode(root_inode_no);
+
+      // zero initialization
+      *inode_ptr = INode{};
+      inode_ptr->type = file_type::directory;
     }
 
     std::optional<uint64_t> allocate_inode() {
-      const auto blk = super_block();
+      const auto blk = get_super_block();
       auto inode_number = blk.inode_number;
       assert(inode_number % 8 == 0);
       auto bitmap_byte_offset = blk.bitmap_byte_offset;
-      LOG_ERROR("inode_number is {}", inode_number);
+      LOG_DEBUG("inode_number is {}", inode_number);
       std::optional<uint64_t> res;
       iterate_bytes(
           bitmap_byte_offset, inode_number / 8,
@@ -186,7 +213,7 @@ namespace raid_fs {
         length -= block_length;
       }
     }
-    const SuperBlock super_block() {
+    const SuperBlock get_super_block() {
       return get_block(super_block_no)->as_super_block();
     }
 
@@ -199,6 +226,7 @@ namespace raid_fs {
     BlockCache block_cache;
     std::shared_mutex block_mu;
     SyncThread sync_thread;
+    uint64_t root_inode_no{};
   };
 } // namespace raid_fs
 
