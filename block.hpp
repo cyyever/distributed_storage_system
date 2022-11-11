@@ -31,7 +31,6 @@ namespace raid_fs {
   struct alignas(128) INode {
     file_type type{};
     uint64_t size{}; // file size or the number of files in the directory
-    /* time_t mtime{}; // time of last modification */
     uint64_t block_ptrs[14]{};
   };
   static_assert(sizeof(INode) == 128);
@@ -57,16 +56,10 @@ namespace raid_fs {
   };
   using block_ptr_type = std::shared_ptr<Block>;
 
-  struct INodeBlock : public Block {
-    INodeBlock() { assert(block_size % sizeof(INode) == 0); }
-
-    INode &get_inode(size_t idx) {
-      if (idx >= block_size / sizeof(INode)) {
-        throw std::range_error(fmt::format("block index {} out of range", idx));
-      }
-      auto *ptr = reinterpret_cast<INode *>(data.data());
-      return ptr[idx];
-    }
+  struct alignas(256) DirEntry {
+    uint64_t inode_no;
+    char name[128];
   };
+  static_assert(sizeof(DirEntry) == 256);
 
 } // namespace raid_fs

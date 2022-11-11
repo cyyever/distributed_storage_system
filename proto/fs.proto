@@ -9,9 +9,8 @@ import "google/protobuf/empty.proto";
    However, we discard unsuitable abstractions for distributed systems
    such as special file types and file permission.
    For simplicity, paths consist of English letters and digits
-   separated by '/' with max length of 255 bytes.
-   Paths are case-sensitive.
-   Relative paths like '.' and '..' are not supported.
+   separated by '/' , where each path component has a max length of 127 chars.
+   Also paths are case-sensitive, relative paths like '.' and '..' are not supported.
 */
 message OpenRequest {
   string path = 1;
