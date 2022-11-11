@@ -43,11 +43,11 @@ namespace raid_fs {
     Block &operator=(Block &&) noexcept = default;
 
     SuperBlock &as_super_block() {
+      assert(data.size() >= sizeof(SuperBlock));
       return *reinterpret_cast<SuperBlock *>(data.data());
     }
 
     static inline size_t block_size = 0;
-    bool dirty{false};
     block_data_type data;
   };
   using block_ptr_type = std::shared_ptr<Block>;

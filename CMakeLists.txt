@@ -5,6 +5,9 @@ project(RAID_FS CXX)
 set(CMAKE_CXX_STANDARD 23)
 include(cmake/all.cmake)
 
+option(USE_ASAN "Build with asan" OFF)
+option(USE_UBSAN "Build with ubsan" OFF)
+
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
@@ -13,6 +16,10 @@ find_package(spdlog REQUIRED)
 find_package(CyyNaiveLib REQUIRED)
 find_package(Boost REQUIRED)
 find_package(CyyAlgorithmLib REQUIRED)
+
+if(USE_ASAN OR USE_UBSAN)
+  find_package(GoogleSanitizer REQUIRED)
+endif()
 
 set(proto_dir ${CMAKE_CURRENT_LIST_DIR}/proto)
 set(proto_files ${proto_dir}/fs.proto ${proto_dir}/error.proto
@@ -46,6 +53,13 @@ add_executable(
 target_include_directories(fs_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(fs_server PUBLIC gRPC::grpc++_unsecure yaml-cpp fmt::fmt
                                        CyyAlgorithmLib CyyNaiveLib::log)
+
+if(USE_ASAN)
+  target_link_libraries(fs_server PUBLIC GoogleSanitizer::address)
+endif()
+if(USE_UBSAN)
+  target_link_libraries(fs_server PUBLIC GoogleSanitizer::undefined)
+endif()
 
 add_executable(
   raid_node_server

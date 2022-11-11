@@ -74,6 +74,7 @@ namespace raid_fs {
         throw std::runtime_error(
             fmt::format("failed to read block {}", block_no));
       }
+      assert(res.value().get() != nullptr);
       return res.value();
     }
     BlockCache::value_reference get_mutable_block(uint64_t block_no) {
@@ -86,56 +87,68 @@ namespace raid_fs {
     }
     // initialize file system layout like the mkfs command
     void make_filesystem() {
-      LOG_WARN("initialize file system");
-      auto block_ref = get_mutable_block(super_block_no);
-      auto &blk = block_ref->as_super_block();
-      strcpy(blk.fs_type, raid_fs_type);
-      blk.fs_version = 0;
-      blk.bitmap_byte_offset = sizeof(SuperBlock);
-      blk.inode_number = block_number * 0.01;
-      if (blk.inode_number == 0) {
-        blk.inode_number = 1;
-      }
-      blk.inode_number = (blk.inode_number + 7) / 8 * 8;
-      assert(blk.inode_number % 8 == 0 && blk.inode_number > 0);
-      auto data_bitmap_byte_offset =
-          blk.bitmap_byte_offset + blk.inode_number / 8;
-      auto max_recordable_block_number =
-          (block_size - data_bitmap_byte_offset % block_size) * 8;
-      blk.inode_table_offset = data_bitmap_byte_offset / block_size + 1;
-      while (true) {
-        blk.data_table_offset = blk.inode_table_offset + blk.inode_number;
-        blk.data_block_number = block_number - blk.data_table_offset;
-        if (blk.data_block_number > max_recordable_block_number) {
-          LOG_DEBUG("{} {}", blk.data_block_number,
-                    max_recordable_block_number);
-          blk.inode_table_offset += 1;
-          max_recordable_block_number += block_size * 8;
-        } else {
-          break;
+      {
+        LOG_WARN("initialize file system");
+        auto block_ref = get_mutable_block(super_block_no);
+        auto &blk = block_ref->as_super_block();
+        strcpy(blk.fs_type, raid_fs_type);
+        blk.fs_version = 0;
+        blk.bitmap_byte_offset = sizeof(SuperBlock);
+        blk.inode_number = block_number * 0.01;
+        if (blk.inode_number == 0) {
+          blk.inode_number = 1;
         }
+        blk.inode_number = (blk.inode_number + 7) / 8 * 8;
+        assert(blk.inode_number % 8 == 0 && blk.inode_number > 0);
+        auto data_bitmap_byte_offset =
+            blk.bitmap_byte_offset + blk.inode_number / 8;
+        auto max_recordable_block_number =
+            (block_size - data_bitmap_byte_offset % block_size) * 8;
+        blk.inode_table_offset = data_bitmap_byte_offset / block_size + 1;
+        while (true) {
+          blk.data_table_offset = blk.inode_table_offset + blk.inode_number;
+          blk.data_block_number = block_number - blk.data_table_offset;
+          if (blk.data_block_number > max_recordable_block_number ||
+              blk.data_block_number % 8 != 0) {
+            LOG_DEBUG("{} {}", blk.data_block_number,
+                      max_recordable_block_number);
+            blk.inode_table_offset += 1;
+            max_recordable_block_number += block_size * 8;
+          } else {
+            break;
+          }
+        }
+        LOG_WARN("allocate {} inodes and {} data blocks, total {} blocks, "
+                 "{} blocks for bookkeeping",
+                 blk.inode_number, blk.data_block_number, block_number,
+                 block_number - blk.inode_number - blk.data_block_number);
       }
-      LOG_WARN("allocate {} inodes and {} data blocks, total {} blocks, "
-               "{} blocks for bookkeeping",
-               blk.inode_number, blk.data_block_number, block_number,
-               block_number - blk.inode_number - blk.data_block_number);
+      // allocate inode for the root directory '/'
+      auto inode_res = allocate_inode();
+      if (!inode_res.has_value()) {
+        throw std::runtime_error("failed to allocate space for /");
+      }
+      assert(inode_res.value() == 0);
     }
 
     std::optional<uint64_t> allocate_inode() {
-      auto const blk = super_block();
+      const auto blk = super_block();
       auto inode_number = blk.inode_number;
+      assert(inode_number % 8 == 0);
       auto bitmap_byte_offset = blk.bitmap_byte_offset;
+      LOG_ERROR("inode_number is {}", inode_number);
       std::optional<uint64_t> res;
       iterate_bytes(
           bitmap_byte_offset, inode_number / 8,
-          [&res](block_data_view_type view, size_t byte_offset) {
+          [&res, bitmap_byte_offset](block_data_view_type view,
+                                     size_t byte_offset) {
             for (size_t i = 0; i < view.size(); i++) {
               if ((unsigned char)(view[i]) < 255) {
-                uint64_t inode_no = (byte_offset + i) * 8;
+                uint64_t inode_no = (byte_offset + i - bitmap_byte_offset) * 8;
                 auto mask = std::byte{0b10000000};
                 auto new_byte = std::byte(view[i]);
                 for (size_t j = 0; j < 8; j++, inode_no++, mask >>= 1) {
-                  if ((mask & new_byte) != std::byte{0b00000000}) {
+                  if ((mask & new_byte) == std::byte{0b00000000}) {
                     new_byte |= mask;
                     view[i] = std::to_integer<unsigned char>(new_byte);
                     res = inode_no;
@@ -147,7 +160,6 @@ namespace raid_fs {
             }
             return std::pair<bool, bool>{false, false};
           });
-
       return res;
     }
     void iterate_bytes(size_t byte_offset, size_t length,
