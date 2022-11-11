@@ -8,7 +8,6 @@ import "google/protobuf/empty.proto";
    We mimic POSIX filesystem API for the distributed storage system.
    However, we discard unsuitable abstractions for distributed systems
    such as special file types and file permission.
-   
    For simplicity, paths consist of English letters and digits
    separated by '/' with max length of 255 bytes.
    Paths are case-sensitive.

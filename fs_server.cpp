@@ -217,6 +217,23 @@ namespace raid_fs {
       return get_block(super_block_no)->as_super_block();
     }
 
+    bool is_valid_path(const std::string &path) {
+      if (path.empty()) {
+        return false;
+      }
+      if (path.size() > 255) {
+        return false;
+      }
+
+      for (auto c : path) {
+        if (c != '/' && !(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'z') &&
+            !(c >= 'A' && c <= 'Z')) {
+          return false;
+        }
+      }
+      return true;
+    }
+
   private:
     friend SyncThread;
     static constexpr auto raid_fs_type = "RAIDFS";
