@@ -63,7 +63,7 @@ namespace raid_fs {
         if (!grpc_status.ok()) {
           LOG_ERROR("read block {} failed:{}", block_no,
                     grpc_status.error_message());
-          return std::unexpected(Error::ERROR_GRPC_ERROR);
+          return std::unexpected(Error::ERROR_INTERNAL_ERROR);
         }
         if (reply.has_error()) {
           return std::unexpected(reply.error());
@@ -86,7 +86,7 @@ namespace raid_fs {
         if (!grpc_status.ok()) {
           LOG_ERROR("write block {} failed:{}", block_no,
                     grpc_status.error_message());
-          return {Error::ERROR_GRPC_ERROR};
+          return {Error::ERROR_INTERNAL_ERROR};
         }
         if (reply.has_error()) {
           LOG_ERROR("write block {} failed:{}", block_no, reply.error());

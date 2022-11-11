@@ -7,26 +7,13 @@ import "google/protobuf/empty.proto";
 /*
    We mimic POSIX filesystem API for the distributed storage system.
    However, we discard unsuitable abstractions for distributed systems
-   such as directories and file permission.
-   Paths can contain hierarchical structure like '/' to organize related files,
-   but they are simply treated as keys for files.
+   such as special file types and file permission.
+   
+   For simplicity, paths consist of English letters and digits
+   separated by '/' with max length of 255 bytes.
+   Paths are case-sensitive.
+   Relative paths like '.' and '..' are not supported.
 */
-
-message CreateRequest {
-  string path = 1;
-}
-
-message CreateOKReply {
-  uint64 fd = 1;
-}
-
-message CreateReply {
-  oneof test_oneof {
-    Error error = 1;
-    CreateOKReply ok = 2;
-  }
-}
-
 message OpenRequest {
   string path = 1;
   bool o_create = 2;
@@ -85,10 +72,8 @@ message RemoveRequest {
 }
 
 service FileSystem {
-  /* Create a file and return the fd. */
-  rpc Create(CreateRequest) returns (CreateReply) {}
   /* Open a file and return the fd. */
-  /* O_CREAT: If set to True, then create the file on the fly. */
+  /* o_create: If set to True, then create the file and parent directories on the fly. */
   rpc Open(OpenRequest) returns (OpenReply) {}
   /* Read a file. */
   rpc Read(ReadRequest) returns (ReadReply) {}
@@ -96,4 +81,6 @@ service FileSystem {
   rpc Write(WriteRequest) returns (WriteReply) {}
   /* Delete a file. */
   rpc Remove(RemoveRequest) returns (google.protobuf.Empty) {}
+  /* Delete a directory recursively. */
+  rpc RemoveDir(RemoveRequest) returns (google.protobuf.Empty) {}
 }
