@@ -54,13 +54,6 @@ target_include_directories(fs_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(fs_server PUBLIC gRPC::grpc++_unsecure yaml-cpp fmt::fmt
                                        CyyAlgorithmLib CyyNaiveLib::log)
 
-if(USE_ASAN)
-  target_link_libraries(fs_server PUBLIC GoogleSanitizer::address)
-endif()
-if(USE_UBSAN)
-  target_link_libraries(fs_server PUBLIC GoogleSanitizer::undefined)
-endif()
-
 add_executable(
   raid_node_server
   ${CMAKE_CURRENT_LIST_DIR}/raid_node_server.cpp
@@ -73,3 +66,12 @@ target_link_libraries(
                           CyyNaiveLib::log CyyNaiveLib::util)
 
 target_compile_definitions(raid_node_server PRIVATE _LARGEFILE64_SOURCE)
+
+if(USE_ASAN)
+  target_link_libraries(fs_server PUBLIC GoogleSanitizer::address)
+  target_link_libraries(raid_node_server PUBLIC GoogleSanitizer::address)
+endif()
+if(USE_UBSAN)
+  target_link_libraries(fs_server PUBLIC GoogleSanitizer::undefined)
+  target_link_libraries(raid_node_server PUBLIC GoogleSanitizer::undefined)
+endif()
