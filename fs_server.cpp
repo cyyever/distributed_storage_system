@@ -4,7 +4,9 @@
  * \brief Implementation of a file system
  */
 
+#include <functional>
 #include <shared_mutex>
+#include <utility>
 
 #include <cyy/naive_lib/util/runnable.hpp>
 #include <fmt/format.h>
@@ -64,29 +66,6 @@ namespace raid_fs {
       std::condition_variable_any cv;
       FileSystemServiceImpl *impl_ptr;
     };
-    class BlockReference final {
-    public:
-      BlockReference(uint64_t block_no_, block_ptr_type block_ptr_,
-                     BlockCache &cache_)
-          : block_no(block_no_), block_ptr{block_ptr_}, cache{cache_} {}
-
-      BlockReference(const BlockReference &) = delete;
-      BlockReference &operator=(const BlockReference &) = delete;
-
-      BlockReference(BlockReference &&) noexcept = delete;
-      BlockReference &operator=(BlockReference &&) noexcept = delete;
-
-      ~BlockReference() {
-        block_ptr->dirty = true;
-        cache.emplace(block_no, block_ptr);
-      }
-      Block *operator->() const { return block_ptr.get(); }
-
-    private:
-      uint64_t block_no;
-      block_ptr_type block_ptr;
-      BlockCache &cache;
-    };
 
   private:
     const block_ptr_type get_block(uint64_t block_no) {
@@ -97,18 +76,18 @@ namespace raid_fs {
       }
       return res.value();
     }
-    BlockReference get_modifiable_block(uint64_t block_no) {
-      auto res = block_cache.get(block_no);
+    BlockCache::value_reference get_mutable_block(uint64_t block_no) {
+      auto res = block_cache.mutable_get(block_no);
       if (!res.has_value()) {
         throw std::runtime_error(
             fmt::format("failed to read block {}", block_no));
       }
-      return {block_no, res.value(), block_cache};
+      return std::move(res.value());
     }
     // initialize file system layout like the mkfs command
     void make_filesystem() {
       LOG_WARN("initialize file system");
-      auto block_ref = get_modifiable_block(super_block_no);
+      auto block_ref = get_mutable_block(super_block_no);
       auto &blk = block_ref->as_super_block();
       strcpy(blk.fs_type, raid_fs_type);
       blk.fs_version = 0;
@@ -141,7 +120,61 @@ namespace raid_fs {
                blk.inode_number, blk.data_block_number, block_number,
                block_number - blk.inode_number - blk.data_block_number);
     }
-    const SuperBlock &super_block() {
+
+    std::optional<uint64_t> allocate_inode() {
+      auto const blk = super_block();
+      auto inode_number = blk.inode_number;
+      auto bitmap_byte_offset = blk.bitmap_byte_offset;
+      std::optional<uint64_t> res;
+      iterate_bytes(
+          bitmap_byte_offset, inode_number / 8,
+          [&res](block_data_view_type view, size_t byte_offset) {
+            for (size_t i = 0; i < view.size(); i++) {
+              if ((unsigned char)(view[i]) < 255) {
+                uint64_t inode_no = (byte_offset + i) * 8;
+                auto mask = std::byte{0b10000000};
+                auto new_byte = std::byte(view[i]);
+                for (size_t j = 0; j < 8; j++, inode_no++, mask >>= 1) {
+                  if ((mask & new_byte) != std::byte{0b00000000}) {
+                    new_byte |= mask;
+                    view[i] = std::to_integer<unsigned char>(new_byte);
+                    res = inode_no;
+                    return std::pair<bool, bool>{true, true};
+                  }
+                }
+                throw std::runtime_error("must not be here");
+              }
+            }
+            return std::pair<bool, bool>{false, false};
+          });
+
+      return res;
+    }
+    void iterate_bytes(size_t byte_offset, size_t length,
+                       const std::function<std::pair<bool, bool>(
+                           block_data_view_type data_view, size_t)> &callback) {
+      while (length) {
+        auto block_no = byte_offset / block_size;
+        auto block = get_block(block_no);
+        auto block_offset = byte_offset % block_size;
+        auto block_length = block_size - block_offset;
+        if (block_length > length) {
+          block_length = length;
+        }
+        auto [changed, finish] = callback(
+            block_data_view_type(&block->data[block_offset], block_length),
+            byte_offset);
+        if (changed) {
+          block_cache.emplace(block_no, block);
+        }
+        if (finish) {
+          return;
+        }
+        byte_offset += block_length;
+        length -= block_length;
+      }
+    }
+    const SuperBlock super_block() {
       return get_block(super_block_no)->as_super_block();
     }
 

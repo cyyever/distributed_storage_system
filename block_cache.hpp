@@ -53,9 +53,7 @@ namespace raid_fs {
       return std::make_shared<Block>(std::move(fs_block));
     }
     void clear_data() override {}
-    void erase_data(const key_type &) override {
-      throw std::runtime_error("shouldn't be called");
-    }
+    void erase_data(const key_type &) override {}
     void save_data(const key_type &block_no, mapped_type block) override {
       assert(block->dirty);
       auto ratio = block_size / raid_block_size;
