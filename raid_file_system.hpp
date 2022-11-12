@@ -221,26 +221,26 @@ namespace raid_fs {
       }
       auto data_block_ref = get_mutable_data_block(data_block_no_opt.value());
       *next_block_it = data_block_ref.get_key();
-      return std::move(data_block_ref);
+      return data_block_ref;
     }
 
     bool release_block(uint64_t bitmap_byte_offset,
                        uint64_t block_no_in_table) {
       bool res = false;
-      iterate_bytes(bitmap_byte_offset + block_no_in_table / 8, 1,
-                    [&res, block_no_in_table](block_data_view_type view,
-                                              size_t byte_offset) {
-                      auto new_byte = std::byte(view[0]);
-                      std::byte mask{0b10000000};
-                      mask >>= (block_no_in_table % 8);
-                      if ((mask & new_byte) == mask) {
-                        new_byte |= (~mask);
-                        view[0] = std::to_integer<unsigned char>(new_byte);
-                        res = true;
-                        return std::pair<bool, bool>{true, true};
-                      }
-                      return std::pair<bool, bool>{false, true};
-                    });
+      iterate_bytes(
+          bitmap_byte_offset + block_no_in_table / 8, 1,
+          [&res, block_no_in_table](block_data_view_type view, size_t) {
+            auto new_byte = std::byte(view[0]);
+            std::byte mask{0b10000000};
+            mask >>= (block_no_in_table % 8);
+            if ((mask & new_byte) == mask) {
+              new_byte |= (~mask);
+              view[0] = std::to_integer<unsigned char>(new_byte);
+              res = true;
+              return std::pair<bool, bool>{true, true};
+            }
+            return std::pair<bool, bool>{false, true};
+          });
       return res;
     }
 
