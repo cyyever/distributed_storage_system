@@ -5,6 +5,7 @@
  */
 
 #pragma once
+#include <algorithm>
 #include <functional>
 #include <ranges>
 #include <shared_mutex>
@@ -86,18 +87,16 @@ namespace raid_fs {
       return {inode_ptr, std::move(block_ref)};
     }
 
-    std::pair<BlockCache::value_reference, int64_t>
-    get_mutable_data_block(uint64_t data_block_no) {
+    BlockCache::value_reference get_mutable_data_block(uint64_t data_block_no) {
       auto const super_block = get_super_block();
       assert(data_block_no < super_block.data_block_number);
       auto block_no = super_block.data_table_offset + data_block_no;
-      auto block_ref = get_mutable_block(block_no);
-      return {std::move(block_ref), block_no};
+      return get_mutable_block(block_no);
     }
 
     INode get_inode(uint64_t inode_no) {
       auto [inode_ptr, block_ref] = get_mutable_inode(inode_no);
-      block_ref.cancel_save();
+      block_ref.cancel_writeback();
       return *inode_ptr;
     }
 
@@ -173,17 +172,16 @@ namespace raid_fs {
       *inode_ptr = INode{};
       inode_ptr->type = type;
       // allocate a data block in advance
-      auto data_block_no_opt = allocate_data_block();
-      if (!data_block_no_opt.has_value()) {
+      auto data_block_ref_opt = allocate_data_block(*inode_ptr);
+      if (!data_block_ref_opt.has_value()) {
         auto success = release_inode(inode_no);
         assert(success);
         return {};
       }
-      auto [data_block_ref, block_no] =
-          get_mutable_data_block(data_block_no_opt.value());
-      inode_ptr->block_ptrs[0] = block_no;
+
       if (type == file_type::directory) {
-        reinterpret_cast<DirEntry *>(data_block_ref->data.data())->inode_no = 0;
+        reinterpret_cast<DirEntry *>(data_block_ref_opt.value()->data.data())
+            ->inode_no = 0;
       }
 
       return inode_no;
@@ -206,11 +204,24 @@ namespace raid_fs {
                            data_block_no);
     }
 
-    std::optional<uint64_t> allocate_data_block() {
-      const auto blk = get_super_block();
-      LOG_DEBUG("data block number is {}", blk.data_table_offset);
-      return allocate_block(blk.bitmap_byte_offset + blk.inode_number / 8,
-                            blk.data_block_number / 8);
+    std::optional<BlockCache::value_reference>
+    allocate_data_block(INode &inode) {
+      auto next_block_it = std::ranges::find(inode.block_ptrs, 0);
+      if (next_block_it == std::end(inode.block_ptrs)) {
+        return {};
+      }
+
+      const auto super_block = get_super_block();
+      LOG_DEBUG("data block number is {}", super_block.data_table_offset);
+      auto data_block_no_opt = allocate_block(
+          super_block.bitmap_byte_offset + super_block.inode_number / 8,
+          super_block.data_block_number / 8);
+      if (!data_block_no_opt.has_value()) {
+        return {};
+      }
+      auto data_block_ref = get_mutable_data_block(data_block_no_opt.value());
+      *next_block_it = data_block_ref.get_key();
+      return std::move(data_block_ref);
     }
 
     bool release_block(uint64_t bitmap_byte_offset,
@@ -286,7 +297,7 @@ namespace raid_fs {
         length -= block_length;
       }
     }
-    const SuperBlock get_super_block() {
+    SuperBlock get_super_block() {
       return get_block(super_block_no)->as_super_block();
     }
 
@@ -294,10 +305,12 @@ namespace raid_fs {
       std::smatch match;
       std::regex re("^(/[0-9A-Za-z]+)+$");
       if (!std::regex_search(path, match, re)) {
+        LOG_DEBUG("invalid path {}", path);
         return false;
       }
       for (const auto component : std::views::split(path, "/")) {
         if (component.size() > 127) {
+          LOG_DEBUG("long component {}", component);
           return false;
         }
       }
