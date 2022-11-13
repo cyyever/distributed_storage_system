@@ -9,6 +9,7 @@
 #include <functional>
 #include <ranges>
 #include <shared_mutex>
+#include <tuple>
 #include <utility>
 
 #include <cyy/naive_lib/util/runnable.hpp>
@@ -190,8 +191,10 @@ namespace raid_fs {
       LOG_DEBUG("data block no is {}", data_block_ref_opt.value().get_key());
 
       if (type == file_type::directory) {
-        reinterpret_cast<DirEntry *>(data_block_ref_opt.value()->data.data())
-            ->inode_no = 0;
+        auto dir_entry_ptr = reinterpret_cast<DirEntry *>(
+            data_block_ref_opt.value()->data.data());
+        dir_entry_ptr->inode_no = 0;
+        dir_entry_ptr->type = file_type::none;
         inode_ptr->size = sizeof(DirEntry);
       }
 
@@ -328,6 +331,12 @@ namespace raid_fs {
       return true;
     }
 
+    using INodeLock = std::tuple<uint64_t, std::unique_lock<std::shared_mutex>,
+                                 std::shared_ptr<std::shared_mutex>>;
+
+    using INodeSharedLock =
+        std::tuple<uint64_t, std::shared_lock<std::shared_mutex>,
+                   std::shared_ptr<std::shared_mutex>>;
     template <bool use_shared_lock> auto lock_inode(uint64_t inode_no) {
       std::shared_lock lk(metadata_mutex);
       while (!inode_mutexes.contains(inode_no)) {
@@ -343,36 +352,57 @@ namespace raid_fs {
       auto mutex_ptr = inode_mutexes[inode_no];
       lk.unlock();
       if constexpr (use_shared_lock) {
-        return std::pair{std::shared_lock<std::shared_mutex>(*mutex_ptr),
-                         mutex_ptr};
+        return std::make_tuple(inode_no,
+                               std::shared_lock<std::shared_mutex>(*mutex_ptr),
+                               mutex_ptr);
       } else {
-        return std::pair{std::unique_lock<std::shared_mutex>(*mutex_ptr),
-                         mutex_ptr};
+        return std::make_tuple(inode_no,
+                               std::unique_lock<std::shared_mutex>(*mutex_ptr),
+                               mutex_ptr);
       }
     }
 
-    std::expected<
-        std::pair<uint64_t, std::pair<std::unique_lock<std::shared_mutex>,
-                                      std::shared_ptr<std::shared_mutex>>>,
-        Error>
-    travel_path(const std::filesystem::path &p, bool create_missing,
-                bool is_dir = false) {
+    std::expected<INodeLock, Error> travel_path(const std::filesystem::path &p,
+                                                bool create_missing,
+                                                bool is_dir = false) {
       if (p == "/") {
-        return std::pair<uint64_t,
-                         std::pair<std::unique_lock<std::shared_mutex>,
-                                   std::shared_ptr<std::shared_mutex>>>
-
-            {root_inode_no, lock_inode<false>(root_inode_no)};
+        return lock_inode<false>(root_inode_no);
       }
 
       auto parent_res = travel_path(p.parent_path(), create_missing, true);
       if (!parent_res.has_value()) {
         return parent_res;
       }
-      auto [parant_inode_ptr, parant_inode_block_ref] =
-          get_mutable_inode(parent_res.value().first);
+      auto [parent_inode_ptr, parant_inode_block_ref] =
+          get_mutable_inode(std::get<0>(parent_res.value()));
+      if (!create_missing) {
+        uint64_t p_inode_no = 0;
+        Error error = ERROR_UNSPECIFIED;
+        iterate_dirs(*parent_inode_ptr, [&](const DirEntry &dir) {
+          if (strcmp(dir.name, p.filename().c_str()) == 0) {
+            if (is_dir && dir.type != file_type::directory) {
+              error = ERROR_PATH_COMPONENT_IS_FILE;
+              return true;
+            }
+            if (!is_dir && dir.type != file_type::file) {
+              error = ERROR_PATH_COMPONENT_IS_DIR;
+              return true;
+            }
+            p_inode_no = dir.inode_no;
+            return true;
+          }
+          return false;
+        });
+        if (p_inode_no == 0) {
+          if (error == ERROR_UNSPECIFIED) {
+            error = ERROR_UNEXISTED_FILE;
+          }
+          return std::unexpected(error);
+        }
+        return lock_inode<false>(p_inode_no);
+      }
 
-      /* return std::unexpected{::}; */
+      return {};
     }
 
     void

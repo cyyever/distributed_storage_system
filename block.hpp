@@ -24,8 +24,9 @@ namespace raid_fs {
   };
   static_assert(sizeof(SuperBlock) == 128);
   enum class file_type : uint8_t {
-    directory = 0,
-    file = 1,
+    none = 0,
+    directory = 1,
+    file = 2,
   };
 
   struct alignas(128) INode {
@@ -57,6 +58,7 @@ namespace raid_fs {
   using block_ptr_type = std::shared_ptr<Block>;
 
   struct alignas(256) DirEntry {
+    file_type type{};
     uint64_t inode_no;
     char name[128];
   };
