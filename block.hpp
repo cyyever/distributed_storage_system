@@ -24,15 +24,20 @@ namespace raid_fs {
   };
   static_assert(sizeof(SuperBlock) == 128);
   enum class file_type : uint8_t {
-    free_dir_entry = 0,
+    free_dir_entry_head = 0,
     directory = 1,
     file = 2,
+    free_dir_entry = 3,
   };
 
   struct alignas(128) INode {
     file_type type{};
     uint64_t size{}; // file size or the number of files in the directory
     uint64_t block_ptrs[14]{};
+
+    uint64_t get_max_file_size(uint64_t block_size) {
+      return block_size * std::size(block_ptrs);
+    }
   };
   static_assert(sizeof(INode) == 128);
 
