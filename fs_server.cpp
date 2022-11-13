@@ -26,13 +26,25 @@ namespace raid_fs {
     ::grpc::Status Create(::grpc::ServerContext *context,
                           const ::raid_fs::CreateRequest *request,
                           ::raid_fs::CreateReply *response) override {
-      auto inode_or_error = raid_fs.create(request->path());
+      auto inode_or_error = raid_fs.open(request->path(), true);
       if (!inode_or_error.has_value()) {
         response->set_error(inode_or_error.error());
       } else {
-        response->mutable_ok()->set_fd(inode_or_error.value());
+        response->mutable_ok()->set_fd(inode_or_error.value().first);
       }
-
+      return ::grpc::Status::OK;
+    }
+    ::grpc::Status Open(::grpc::ServerContext *context,
+                        const ::raid_fs::OpenRequest *request,
+                        ::raid_fs::OpenReply *response) override {
+      auto inode_or_error = raid_fs.open(request->path(), false);
+      if (!inode_or_error.has_value()) {
+        response->set_error(inode_or_error.error());
+      } else {
+        auto [inode_no, inode] = inode_or_error.value();
+        response->mutable_ok()->set_fd(inode_no);
+        response->mutable_ok()->set_size(inode.size);
+      }
       return ::grpc::Status::OK;
     }
 
