@@ -17,6 +17,7 @@
 #include "block.hpp"
 #include "block_cache.hpp"
 #include "config.hpp"
+#include "error.pb.h"
 #include "raid_controller.hpp"
 
 namespace raid_fs {
@@ -39,6 +40,12 @@ namespace raid_fs {
     }
 
     ~RAIDFileSystem() { sync_thread.stop(); }
+    std::optional<Error> create(const std::string &path) {
+      if (!is_valid_path(path)) {
+        return Error::ERROR_INVALID_PATH;
+      }
+      return {};
+    }
 
   private:
     class SyncThread final : public cyy::naive_lib::runnable {
@@ -49,11 +56,11 @@ namespace raid_fs {
     private:
       void run(const std::stop_token &st) override {
         while (true) {
-          std::unique_lock lk(impl_ptr->block_mu);
-          if (cv.wait_for(lk, st, std::chrono::minutes(5),
-                          [&st]() { return st.stop_requested(); })) {
-            return;
-          }
+          /* std::unique_lock lk(impl_ptr->block_mu); */
+          /* if (cv.wait_for(lk, st, std::chrono::minutes(5), */
+          /*                 [&st]() { return st.stop_requested(); })) { */
+          /*   return; */
+          /* } */
           impl_ptr->block_cache.flush();
         }
       }
@@ -161,16 +168,13 @@ namespace raid_fs {
 
     std::optional<uint64_t>
     allocate_and_initialize_file_metadata(file_type type) {
+      std::unique_lock lk(metadata_mutex);
       auto inode_no_opt = allocate_inode();
       if (!inode_no_opt.has_value()) {
         return {};
       }
       auto inode_no = inode_no_opt.value();
       auto [inode_ptr, inode_block_ref] = get_mutable_inode(inode_no);
-
-      // zero initialization
-      *inode_ptr = INode{};
-      inode_ptr->type = type;
       // allocate a data block in advance
       auto data_block_ref_opt = allocate_data_block(*inode_ptr);
       if (!data_block_ref_opt.has_value()) {
@@ -178,10 +182,17 @@ namespace raid_fs {
         assert(success);
         return {};
       }
+      lk.unlock();
+
+      // zero initialization
+      *inode_ptr = INode{};
+      inode_ptr->type = type;
+      LOG_DEBUG("data block no is {}", data_block_ref_opt.value().get_key());
 
       if (type == file_type::directory) {
         reinterpret_cast<DirEntry *>(data_block_ref_opt.value()->data.data())
             ->inode_no = 0;
+        inode_ptr->size = sizeof(DirEntry);
       }
 
       return inode_no;
@@ -317,6 +328,87 @@ namespace raid_fs {
       return true;
     }
 
+    template <bool use_shared_lock> auto lock_inode(uint64_t inode_no) {
+      std::shared_lock lk(metadata_mutex);
+      while (!inode_mutexes.contains(inode_no)) {
+        lk.unlock();
+        {
+          std::unique_lock lk2(metadata_mutex);
+          if (!inode_mutexes.contains(inode_no)) {
+            inode_mutexes[inode_no] = std::make_shared<std::shared_mutex>();
+          }
+        }
+        lk.lock();
+      }
+      auto mutex_ptr = inode_mutexes[inode_no];
+      lk.unlock();
+      if constexpr (use_shared_lock) {
+        return std::pair{std::shared_lock<std::shared_mutex>(*mutex_ptr),
+                         mutex_ptr};
+      } else {
+        return std::pair{std::unique_lock<std::shared_mutex>(*mutex_ptr),
+                         mutex_ptr};
+      }
+    }
+
+    std::expected<
+        std::pair<uint64_t, std::pair<std::unique_lock<std::shared_mutex>,
+                                      std::shared_ptr<std::shared_mutex>>>,
+        Error>
+    travel_path(const std::filesystem::path &p, bool create_missing,
+                bool is_dir = false) {
+      if (p == "/") {
+        return std::pair<uint64_t,
+                         std::pair<std::unique_lock<std::shared_mutex>,
+                                   std::shared_ptr<std::shared_mutex>>>
+
+            {root_inode_no, lock_inode<false>(root_inode_no)};
+      }
+
+      auto parent_res = travel_path(p.parent_path(), create_missing, true);
+      if (!parent_res.has_value()) {
+        return parent_res;
+      }
+      auto [parant_inode_ptr, parant_inode_block_ref] =
+          get_mutable_inode(parent_res.value().first);
+
+      /* return std::unexpected{::}; */
+    }
+
+    void
+    iterate_dirs(INode &inode,
+                 std::function<bool(const DirEntry &)> dir_entry_callback) {
+      assert(inode.type == file_type::directory);
+      assert(block_size % sizeof(DirEntry) == 0);
+      uint64_t remain_size = inode.size;
+      bool finish = false;
+      for (auto block_ptr : inode.block_ptrs) {
+        if (block_ptr == 0) {
+          throw std::runtime_error("empty block in directory");
+        }
+        uint64_t length = std::min(block_size, remain_size);
+        iterate_bytes(
+            block_ptr * block_size, length,
+            [&finish, &dir_entry_callback](block_data_view_type view,
+                                           size_t) -> std::pair<bool, bool> {
+              assert(view.size() % sizeof(DirEntry) == 0);
+              DirEntry *dir_entry_ptr =
+                  reinterpret_cast<DirEntry *>(view.data());
+              for (size_t i = 0; i < view.size() / sizeof(DirEntry); i++) {
+                if (dir_entry_callback(dir_entry_ptr[i])) {
+                  finish = true;
+                  return {false, true};
+                }
+              }
+              return {false, false};
+            });
+        remain_size -= length;
+        if (!remain_size || finish) {
+          break;
+        }
+      }
+    }
+
   private:
     friend SyncThread;
     static constexpr auto raid_fs_type = "RAIDFS";
@@ -324,8 +416,18 @@ namespace raid_fs {
     size_t block_size;
     size_t block_number;
     BlockCache block_cache;
-    std::shared_mutex block_mu;
+    std::shared_mutex metadata_mutex;
+    /* std::unordered_map<uint64_t, std::shared_ptr<std::shared_mutex>> */
+    /*     block_mutexes; */
+    std::unordered_map<uint64_t, std::shared_ptr<std::shared_mutex>>
+        inode_mutexes;
     SyncThread sync_thread;
     uint64_t root_inode_no{};
+    /* thread_local static
+     * std::vector<std::unique_ptr<std::shared_lock<std::shared_mutex>>>
+     * sharelocks; */
+    /* thread_local static
+     * std::vector<std::unique_ptr<std::unique_lock<std::shared_mutex>>>
+     * unique_locks; */
   };
 } // namespace raid_fs
