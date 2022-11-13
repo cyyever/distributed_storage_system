@@ -469,26 +469,45 @@ namespace raid_fs {
         }
         return std::unexpected(error);
       }
-
-      return {};
+      DirEntry new_entry;
+      new_entry.type = is_dir ? file_type::directory : file_type::file;
+      auto inode_opt = allocate_and_initialize_file_metadata(new_entry.type);
+      if (!inode_opt.has_value()) {
+        LOG_ERROR("failed to allocate space for {}", p.string());
+        return std::unexpected(ERROR_FILE_SYSTEM_FULL);
+      }
+      strcpy(new_entry.name, p.filename().c_str());
+      new_entry.inode_no = inode_opt.value();
+      if (!allocate_dir_entry(*parent_inode_ptr, new_entry)) {
+        LOG_ERROR("failed to allocate space for {}", p.string());
+        std::unique_lock lk(metadata_mutex);
+        release_inode(new_entry.inode_no);
+        return std::unexpected(ERROR_FILE_SYSTEM_FULL);
+      }
+      return lock_inode<false>(new_entry.inode_no);
     }
 
     bool allocate_dir_entry(INode &inode, const DirEntry &new_entry) {
       assert(inode.type == file_type::directory);
       auto first_block = get_mutable_block(inode.block_ptrs[0]);
-      DirEntry *dir_entry_ptr =
+      DirEntry *first_dir_entry_ptr =
           reinterpret_cast<DirEntry *>(first_block->data.data());
-      assert(dir_entry_ptr->type == file_type::free_dir_entry_head);
-      auto free_dir_entry_no = dir_entry_ptr->inode_no;
+      assert(first_dir_entry_ptr->type == file_type::free_dir_entry_head);
+      auto free_dir_entry_no = first_dir_entry_ptr->inode_no;
       uint64_t written_bytes = 0;
-      if (free_dir_entry_no == 0) {
-        std::lock_guard lk(metadata_mutex);
-        written_bytes = write_data(
-            inode, inode.size,
-            const_block_data_view_type(
-                reinterpret_cast<const char *>(&new_entry), sizeof(DirEntry)));
+      if (free_dir_entry_no != 0) {
+        auto data = read_data(inode, free_dir_entry_no * sizeof(DirEntry),
+                              sizeof(DirEntry));
+        first_dir_entry_ptr->inode_no =
+            reinterpret_cast<DirEntry *>(data.data())->inode_no;
       } else {
+        free_dir_entry_no = inode.size / sizeof(DirEntry);
       }
+      std::lock_guard lk(metadata_mutex);
+      written_bytes = write_data(
+          inode, free_dir_entry_no * sizeof(DirEntry),
+          const_block_data_view_type(reinterpret_cast<const char *>(&new_entry),
+                                     sizeof(DirEntry)));
       if (written_bytes == 0) {
         return false;
       }
