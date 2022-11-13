@@ -5,8 +5,8 @@ project(RAID_FS CXX)
 set(CMAKE_CXX_STANDARD 23)
 include(cmake/all.cmake)
 
-option(USE_ASAN "Build with asan" OFF)
-option(USE_UBSAN "Build with ubsan" OFF)
+option(USE_ASAN "Build with asan" ON)
+option(USE_UBSAN "Build with ubsan" ON)
 
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
@@ -68,3 +68,6 @@ if(USE_UBSAN)
   target_link_libraries(fs_server PUBLIC GoogleSanitizer::undefined)
   target_link_libraries(raid_node_server PUBLIC GoogleSanitizer::undefined)
 endif()
+
+# test
+add_subdirectory(test)
