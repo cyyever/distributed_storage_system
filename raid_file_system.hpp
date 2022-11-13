@@ -32,6 +32,14 @@ namespace raid_fs {
           block_cache(fs_cfg.block_pool_size, fs_cfg.block_size,
                       raid_controller_ptr),
           sync_thread(this) {
+      if (block_size % sizeof(INode) != 0) {
+        throw std::runtime_error("block size is not a multiple of inodes");
+      }
+
+      if (block_size % sizeof(DirEntry) != 0) {
+        throw std::runtime_error(
+            "block size is not a multiple of directory entries");
+      }
 
       // file system is not initialized
       if (std::string(get_super_block().fs_type) != raid_fs_type) {
@@ -57,6 +65,7 @@ namespace raid_fs {
     private:
       void run(const std::stop_token &st) override {
         while (true) {
+          // TODO
           /* std::unique_lock lk(impl_ptr->block_mu); */
           /* if (cv.wait_for(lk, st, std::chrono::minutes(5), */
           /*                 [&st]() { return st.stop_requested(); })) { */
@@ -194,7 +203,7 @@ namespace raid_fs {
         auto dir_entry_ptr = reinterpret_cast<DirEntry *>(
             data_block_ref_opt.value()->data.data());
         dir_entry_ptr->inode_no = 0;
-        dir_entry_ptr->type = file_type::none;
+        dir_entry_ptr->type = file_type::free_dir_entry;
         inode_ptr->size = sizeof(DirEntry);
       }
 
@@ -375,31 +384,31 @@ namespace raid_fs {
       }
       auto [parent_inode_ptr, parant_inode_block_ref] =
           get_mutable_inode(std::get<0>(parent_res.value()));
-      if (!create_missing) {
-        uint64_t p_inode_no = 0;
-        Error error = ERROR_UNSPECIFIED;
-        iterate_dirs(*parent_inode_ptr, [&](const DirEntry &dir) {
-          if (strcmp(dir.name, p.filename().c_str()) == 0) {
-            if (is_dir && dir.type != file_type::directory) {
-              error = ERROR_PATH_COMPONENT_IS_FILE;
-              return true;
-            }
-            if (!is_dir && dir.type != file_type::file) {
-              error = ERROR_PATH_COMPONENT_IS_DIR;
-              return true;
-            }
-            p_inode_no = dir.inode_no;
+      uint64_t p_inode_no = 0;
+      Error error = ERROR_UNSPECIFIED;
+      iterate_dirs(*parent_inode_ptr, [&](const DirEntry &dir) {
+        if (strcmp(dir.name, p.filename().c_str()) == 0) {
+          if (is_dir && dir.type != file_type::directory) {
+            error = ERROR_PATH_COMPONENT_IS_FILE;
             return true;
           }
-          return false;
-        });
-        if (p_inode_no == 0) {
-          if (error == ERROR_UNSPECIFIED) {
-            error = ERROR_UNEXISTED_FILE;
+          if (!is_dir && dir.type != file_type::file) {
+            error = ERROR_PATH_COMPONENT_IS_DIR;
+            return true;
           }
-          return std::unexpected(error);
+          p_inode_no = dir.inode_no;
+          return true;
         }
+        return false;
+      });
+      if (p_inode_no != 0) {
         return lock_inode<false>(p_inode_no);
+      }
+      if (!create_missing) {
+        if (error == ERROR_UNSPECIFIED) {
+          error = ERROR_UNEXISTED_FILE;
+        }
+        return std::unexpected(error);
       }
 
       return {};
@@ -409,7 +418,6 @@ namespace raid_fs {
     iterate_dirs(INode &inode,
                  std::function<bool(const DirEntry &)> dir_entry_callback) {
       assert(inode.type == file_type::directory);
-      assert(block_size % sizeof(DirEntry) == 0);
       uint64_t remain_size = inode.size;
       bool finish = false;
       for (auto block_ptr : inode.block_ptrs) {
@@ -425,6 +433,9 @@ namespace raid_fs {
               DirEntry *dir_entry_ptr =
                   reinterpret_cast<DirEntry *>(view.data());
               for (size_t i = 0; i < view.size() / sizeof(DirEntry); i++) {
+                if (dir_entry_ptr[i].type == file_type::free_dir_entry) {
+                  continue;
+                }
                 if (dir_entry_callback(dir_entry_ptr[i])) {
                   finish = true;
                   return {false, true};
