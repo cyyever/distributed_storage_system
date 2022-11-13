@@ -1,6 +1,7 @@
 ---
 
 disk_capacity: 10GB
+debug_log: true
 filesystem:
   port: 60000
   block_pool_size: 1GB

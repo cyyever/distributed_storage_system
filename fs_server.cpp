@@ -36,6 +36,9 @@ int main(int argc, char **argv) {
   }
   raid_fs::FileSystemConfig cfg(argv[1]);
   raid_fs::RAIDConfig raid_cfg(argv[1]);
+  if (cfg.debug_log) {
+    cyy::naive_lib::log::set_level(spdlog::level::debug);
+  }
   raid_fs::Block::block_size = cfg.block_size;
   std::string server_address(fmt::format("0.0.0.0:{}", cfg.port));
 

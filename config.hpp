@@ -17,8 +17,8 @@ namespace raid_fs {
   struct Config {
     explicit Config(const std::filesystem::path &config_file) {
       YAML::Node yaml_node = YAML::LoadFile(config_file);
-
       disk_capacity = parse_size(yaml_node, "disk_capacity");
+      debug_log = yaml_node["debug_log"].as<bool>();
     }
     static size_t parse_size(const YAML::Node &node, const std::string &key) {
       size_t result = 0;
@@ -48,6 +48,7 @@ namespace raid_fs {
           fmt::format("invalid value for {}:{}", key, config_value));
     }
     size_t disk_capacity{};
+    bool debug_log{};
   };
   struct FileSystemConfig : public Config {
     explicit FileSystemConfig(const std::filesystem::path &config_file)
