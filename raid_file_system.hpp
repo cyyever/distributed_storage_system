@@ -49,11 +49,15 @@ namespace raid_fs {
     }
 
     ~RAIDFileSystem() { sync_thread.stop(); }
-    std::optional<Error> create(const std::string &path) {
+    std::expected<uint64_t, Error> create(const std::string &path) {
       if (!is_valid_path(path)) {
-        return Error::ERROR_INVALID_PATH;
+        return std::unexpected(Error::ERROR_INVALID_PATH);
       }
-      return {};
+      auto res = travel_path(path, true);
+      if (!res.has_value()) {
+        return res.error();
+      }
+      return std::get<0>(res.value());
     }
 
   private:
