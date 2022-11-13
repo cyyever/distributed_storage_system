@@ -22,7 +22,7 @@ namespace raid_fs {
         const std::shared_ptr<RAIDController> &raid_controller_ptr)
         : raid_fs(fs_cfg, raid_controller_ptr) {}
 
-    ~FileSystemServiceImpl() = default;
+    ~FileSystemServiceImpl() override = default;
 
   private:
     RAIDFileSystem raid_fs;
@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
   raid_fs::FileSystemConfig cfg(argv[1]);
   raid_fs::RAIDConfig raid_cfg(argv[1]);
   if (cfg.debug_log) {
-    cyy::naive_lib::log::set_level(spdlog::level::debug);
+    cyy::naive_lib::log::set_level(spdlog::level::level_enum::debug);
   }
   raid_fs::Block::block_size = cfg.block_size;
   std::string server_address(fmt::format("0.0.0.0:{}", cfg.port));

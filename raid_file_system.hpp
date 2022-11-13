@@ -114,6 +114,7 @@ namespace raid_fs {
       auto block_ref = get_mutable_block(block_no);
       auto inode_ptr = reinterpret_cast<INode *>(block_ref->data.data()) +
                        (inode_no % inodes_per_block);
+      *inode_ptr = INode{};
       return {inode_ptr, std::move(block_ref)};
     }
 
@@ -184,26 +185,22 @@ namespace raid_fs {
       }
       auto inode_no = inode_no_opt.value();
       auto [inode_ptr, inode_block_ref] = get_mutable_inode(inode_no);
-      // allocate a data block in advance
-      auto data_block_ref_opt = get_mutable_data_block_of_file(*inode_ptr, 0);
-      if (!data_block_ref_opt.has_value()) {
-        auto success = release_inode(inode_no);
-        assert(success);
-        return {};
-      }
-      lk.unlock();
-
       // zero initialization
-      *inode_ptr = INode{};
       inode_ptr->type = type;
-      LOG_DEBUG("data block no is {}", data_block_ref_opt.value().get_key());
 
       if (type == file_type::directory) {
-        auto dir_entry_ptr = reinterpret_cast<DirEntry *>(
-            data_block_ref_opt.value()->data.data());
-        dir_entry_ptr->inode_no = 0;
-        dir_entry_ptr->type = file_type::free_dir_entry_head;
-        inode_ptr->size = sizeof(DirEntry);
+        DirEntry new_entry{};
+        new_entry.type = file_type::free_dir_entry_head;
+
+        auto written_bytes = write_data(
+            *inode_ptr, 0,
+            const_block_data_view_type(
+                reinterpret_cast<const char *>(&new_entry), sizeof(DirEntry)),
+            true);
+        if (written_bytes == 0) {
+          release_inode(inode_no);
+          return {};
+        }
       }
 
       return inode_no;
@@ -227,10 +224,12 @@ namespace raid_fs {
     }
 
     uint64_t write_data(INode &inode, uint64_t offset,
-                        const_block_data_view_type view) {
+                        const_block_data_view_type view,
+                        bool check_res = false) {
       if (offset + view.size() > inode.get_max_file_size(block_size)) {
-        return {};
+        return 0;
       }
+      auto data_length = view.size();
 
       while (offset > inode.size) {
         auto data_block_ref_opt =
@@ -259,6 +258,10 @@ namespace raid_fs {
         view = view.subspan(length);
         offset += length;
         written_bytes += length;
+      }
+      if (check_res && written_bytes != data_length) {
+        throw std::runtime_error(fmt::format("invalid write operation {} {}",
+                                             written_bytes, data_length));
       }
       return written_bytes;
     }
@@ -507,13 +510,10 @@ namespace raid_fs {
       written_bytes = write_data(
           inode, free_dir_entry_no * sizeof(DirEntry),
           const_block_data_view_type(reinterpret_cast<const char *>(&new_entry),
-                                     sizeof(DirEntry)));
+                                     sizeof(DirEntry)),
+          true);
       if (written_bytes == 0) {
         return false;
-      }
-      if (written_bytes != sizeof(DirEntry)) {
-        throw std::runtime_error(fmt::format("invalid write operation {} {}",
-                                             written_bytes, sizeof(DirEntry)));
       }
       return true;
     }

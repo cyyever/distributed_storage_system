@@ -55,9 +55,8 @@ namespace raid_fs {
     void clear_data() override {}
     void erase_data(const key_type &) override {}
     void save_data(const key_type &block_no, mapped_type block) override {
-      auto ratio = block_size / raid_block_size;
       std::map<key_type, std::string> raid_blocks;
-      for (size_t i = block_no * ratio; i < (block_no + 1) * ratio; i++) {
+      for (size_t i = 0; i < block_size / raid_block_size; i++) {
         raid_blocks[i] =
             block->data.substr(i * raid_block_size, raid_block_size);
       }

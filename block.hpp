@@ -64,8 +64,8 @@ namespace raid_fs {
 
   struct alignas(256) DirEntry {
     file_type type{};
-    uint64_t inode_no;
-    char name[128];
+    uint64_t inode_no{};
+    char name[128]{};
   };
   static_assert(sizeof(DirEntry) == 256);
 
