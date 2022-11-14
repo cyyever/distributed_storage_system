@@ -59,6 +59,18 @@ namespace raid_fs {
       return std::pair<uint64_t, INode>{inode_no, get_inode(inode_no)};
     }
 
+    std::optional<Error> remove_file(const std::string &path) {
+      if (path == "/") {
+        return Error::ERROR_PATH_IS_DIR;
+      }
+      auto res = travel_path(std::filesystem::path(path).parent_path(), false,
+                             false, true);
+      if (!res.has_value()) {
+        return std::unexpected(res.error());
+      }
+      return {};
+    }
+
     std::expected<std::pair<block_data_type, INode>, Error>
     read(uint64_t inode_no, uint64_t offset, uint64_t length) {
       std::unique_lock metadata_lock(metadata_mutex);
@@ -253,6 +265,15 @@ namespace raid_fs {
       }
 
       return inode_no;
+    }
+
+    void release_file_metadata(uint64_t inode_no) {
+      std::unique_lock lk(metadata_mutex);
+      auto inode = get_inode(inode_no);
+      for(auto block_no:inode.block_ptrs) {
+        fdsfdsfdsfdsfsdfdsfds
+
+      }
     }
 
     std::optional<uint64_t> allocate_inode() {
