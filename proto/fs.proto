@@ -70,6 +70,18 @@ message WriteReply {
 message RemoveRequest {
   string path = 1;
 }
+message RemoveReply {
+  optional Error error = 1;
+}
+
+message RemoveDirRequest {
+  string path = 1;
+  bool recursive = 2;
+}
+
+message RemoveDirReply {
+  optional Error error = 1;
+}
 
 service FileSystem {
   /* Open a file and return the fd. */
@@ -81,7 +93,7 @@ service FileSystem {
   /* Write a file. */
   rpc Write(WriteRequest) returns (WriteReply) {}
   /* Delete a file. */
-  rpc Remove(RemoveRequest) returns (google.protobuf.Empty) {}
+  rpc Remove(RemoveRequest) returns (RemoveReply) {}
   /* Delete a directory recursively. */
-  rpc RemoveDir(RemoveRequest) returns (google.protobuf.Empty) {}
+  rpc RemoveDir(RemoveDirRequest) returns (RemoveDirReply) {}
 }

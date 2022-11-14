@@ -588,17 +588,6 @@ namespace raid_fs {
       if (written_bytes == 0) {
         return false;
       }
-      /* auto tmp = read_data(inode, free_dir_entry_no * sizeof(DirEntry), */
-      /*                      sizeof(DirEntry)); */
-      /* auto tmp_ptr = reinterpret_cast<DirEntry *>(tmp.data()); */
-      /* LOG_ERROR("aaaaaaaaa type {} {}", int(tmp_ptr->type), */
-      /*           int(new_entry.type)); */
-      /* LOG_ERROR("aaaaaaaaa inode {} {}", int(tmp_ptr->inode_no), */
-      /*           int(new_entry.inode_no)); */
-      /* LOG_ERROR("aaaaaaaaa name {} {}", tmp_ptr->name,new_entry.name); */
-      /* assert(memcmp(tmp.data(), reinterpret_cast<const char *>(&new_entry),
-       */
-      /*               sizeof(DirEntry) == 0)); */
       return true;
     }
 
