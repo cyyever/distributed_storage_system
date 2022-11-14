@@ -23,21 +23,11 @@ namespace raid_fs {
         : raid_fs(fs_cfg, raid_controller_ptr) {}
 
     ~FileSystemServiceImpl() override = default;
-    ::grpc::Status Create(::grpc::ServerContext *context,
-                          const ::raid_fs::CreateRequest *request,
-                          ::raid_fs::CreateReply *response) override {
-      auto inode_or_error = raid_fs.open(request->path(), true);
-      if (!inode_or_error.has_value()) {
-        response->set_error(inode_or_error.error());
-      } else {
-        response->mutable_ok()->set_fd(inode_or_error.value().first);
-      }
-      return ::grpc::Status::OK;
-    }
-    ::grpc::Status Open(::grpc::ServerContext *context,
+    ::grpc::Status Open(::grpc::ServerContext *,
                         const ::raid_fs::OpenRequest *request,
                         ::raid_fs::OpenReply *response) override {
-      auto inode_or_error = raid_fs.open(request->path(), false);
+      auto inode_or_error =
+          raid_fs.open(request->path(), request->o_create(), request->o_excl());
       if (!inode_or_error.has_value()) {
         response->set_error(inode_or_error.error());
       } else {

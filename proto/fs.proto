@@ -13,24 +13,10 @@ import "google/protobuf/empty.proto";
    Also paths are case-sensitive, relative paths like '.' and '..' are not supported.
 */
 
-message CreateRequest {
-  string path = 1;
-}
-
-message CreateOKReply {
-  uint64 fd = 1;
-}
-
-message CreateReply {
-  oneof test_oneof {
-    Error error = 1;
-    CreateOKReply ok = 2;
-  }
-}
-
 message OpenRequest {
   string path = 1;
   bool o_create = 2;
+  bool o_excl = 3;
 }
 
 message OpenOKReply {
@@ -86,10 +72,9 @@ message RemoveRequest {
 }
 
 service FileSystem {
-  /* Create a file and return the fd. */
-  rpc Create(CreateRequest) returns (CreateReply) {}
   /* Open a file and return the fd. */
   /* o_create: If set to True, then create the file and parent directories on the fly. */
+  /* o_excl: Ensure that this call creates the file; Otherwise, returns ERROR_EXISTED_FILE */
   rpc Open(OpenRequest) returns (OpenReply) {}
   /* Read a file. */
   rpc Read(ReadRequest) returns (ReadReply) {}

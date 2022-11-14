@@ -45,16 +45,13 @@ namespace raid_fs {
       if (std::string(get_super_block().fs_type) != raid_fs_type) {
         make_filesystem();
       }
-      sync_thread.start("sync thread");
+      /* sync_thread.start("sync thread"); */
     }
 
     ~RAIDFileSystem() { sync_thread.stop(); }
     std::expected<std::pair<uint64_t, INode>, Error>
-    open(const std::string &path, bool create_missing) {
-      if (!is_valid_path(path)) {
-        return std::unexpected(Error::ERROR_INVALID_PATH);
-      }
-      auto res = travel_path(path, true);
+    open(const std::string &path, bool o_create, bool o_excl) {
+      auto res = travel_path(path, o_create, o_excl);
       if (!res.has_value()) {
         return std::unexpected(res.error());
       }
@@ -113,22 +110,18 @@ namespace raid_fs {
     std::pair<INode *, BlockCache::value_reference>
     get_mutable_inode(uint64_t inode_no) {
       auto const super_block = get_super_block();
-      assert(inode_no < super_block.inode_number);
+      if (inode_no >= super_block.inode_number) {
+        throw std::runtime_error(
+            fmt::format("invalid inode_no {}, inode_number is {}", inode_no,
+                        super_block.inode_number));
+      }
       auto inodes_per_block = block_size / sizeof(INode);
       auto block_no =
           super_block.inode_table_offset + inode_no / inodes_per_block;
       auto block_ref = get_mutable_block(block_no);
       auto inode_ptr = reinterpret_cast<INode *>(block_ref->data.data()) +
                        (inode_no % inodes_per_block);
-      *inode_ptr = INode{};
       return {inode_ptr, std::move(block_ref)};
-    }
-
-    BlockCache::value_reference get_mutable_data_block(uint64_t data_block_no) {
-      auto const super_block = get_super_block();
-      assert(data_block_no < super_block.data_block_number);
-      auto block_no = super_block.data_table_offset + data_block_no;
-      return get_mutable_block(block_no);
     }
 
     // initialize file system layout like the mkfs command
@@ -180,6 +173,8 @@ namespace raid_fs {
       }
       root_inode_no = inode_opt.value();
       assert(root_inode_no == 0);
+      auto inode = get_inode(root_inode_no);
+      assert(inode.type == file_type::directory);
     }
 
     std::optional<uint64_t>
@@ -192,6 +187,7 @@ namespace raid_fs {
       auto inode_no = inode_no_opt.value();
       auto [inode_ptr, inode_block_ref] = get_mutable_inode(inode_no);
       // zero initialization
+      *inode_ptr = INode{};
       inode_ptr->type = type;
 
       if (type == file_type::directory) {
@@ -239,7 +235,7 @@ namespace raid_fs {
 
       while (offset > inode.size) {
         auto data_block_ref_opt =
-            get_mutable_data_block_of_file(inode, inode.size / block_size);
+            get_mutable_data_block_of_file(inode, inode.size);
         if (!data_block_ref_opt.has_value()) {
           return 0;
         }
@@ -252,8 +248,7 @@ namespace raid_fs {
       }
       uint64_t written_bytes = 0;
       while (view.size()) {
-        auto data_block_ref_opt =
-            get_mutable_data_block_of_file(inode, offset / block_size);
+        auto data_block_ref_opt = get_mutable_data_block_of_file(inode, offset);
         if (!data_block_ref_opt.has_value()) {
           return written_bytes;
         }
@@ -275,8 +270,7 @@ namespace raid_fs {
     block_data_type read_data(INode &inode, uint64_t offset, uint64_t length) {
       block_data_type data;
       while (offset < inode.size) {
-        auto data_block_ptr =
-            get_data_block_of_file(inode, offset / block_size);
+        auto data_block_ptr = get_data_block_of_file(inode, offset);
         auto partial_length =
             std::min(block_size - offset % block_size, length);
         data.append(data_block_ptr->data.data() + offset % block_size,
@@ -287,8 +281,8 @@ namespace raid_fs {
     }
 
     const block_ptr_type get_data_block_of_file(const INode &inode,
-                                                uint64_t data_block_no_inode) {
-      auto block_ptr = inode.block_ptrs[data_block_no_inode];
+                                                uint64_t offset) {
+      auto block_ptr = inode.block_ptrs[offset / block_size];
       if (block_ptr == 0) {
         throw std::runtime_error("invalid block");
       }
@@ -296,22 +290,23 @@ namespace raid_fs {
     }
 
     std::optional<BlockCache::value_reference>
-    get_mutable_data_block_of_file(INode &inode, uint64_t data_block_no_inode) {
-      auto block_ptr = inode.block_ptrs[data_block_no_inode];
+    get_mutable_data_block_of_file(INode &inode, uint64_t offset) {
+
+      auto block_ptr = inode.block_ptrs[offset / block_size];
       if (block_ptr != 0) {
-        return get_mutable_data_block(block_ptr);
+        return get_mutable_block(block_ptr);
       }
 
       const auto super_block = get_super_block();
-      LOG_DEBUG("data block number is {}", super_block.data_table_offset);
       auto data_block_no_opt = allocate_block(
           super_block.bitmap_byte_offset + super_block.inode_number / 8,
           super_block.data_block_number / 8);
       if (!data_block_no_opt.has_value()) {
         return {};
       }
-      auto data_block_ref = get_mutable_data_block(data_block_no_opt.value());
-      inode.block_ptrs[data_block_no_inode] = data_block_ref.get_key();
+      auto data_block_ref = get_mutable_block(super_block.data_table_offset +
+                                              data_block_no_opt.value());
+      inode.block_ptrs[offset / block_size] = data_block_ref.get_key();
       return data_block_ref;
     }
 
@@ -401,7 +396,8 @@ namespace raid_fs {
       }
       for (const auto component : std::views::split(path, "/")) {
         if (component.size() > 127) {
-          LOG_DEBUG("long component {}", component);
+          LOG_DEBUG("long component {}",
+                    std::string(component.data(), component.size()));
           return false;
         }
       }
@@ -414,7 +410,7 @@ namespace raid_fs {
     using INodeSharedLock =
         std::tuple<uint64_t, std::shared_lock<std::shared_mutex>,
                    std::shared_ptr<std::shared_mutex>>;
-    template <bool use_shared_lock> auto lock_inode(uint64_t inode_no) {
+    template <bool use_shared_lock = false> auto lock_inode(uint64_t inode_no) {
       std::shared_lock lk(metadata_mutex);
       while (!inode_mutexes.contains(inode_no)) {
         lk.unlock();
@@ -440,13 +436,20 @@ namespace raid_fs {
     }
 
     std::expected<INodeLock, Error> travel_path(const std::filesystem::path &p,
-                                                bool create_missing,
-                                                bool is_dir = false) {
+                                                bool o_create = false,
+                                                bool o_excl = false,
+                                                bool path_is_dir = false) {
       if (p == "/") {
-        return lock_inode<false>(root_inode_no);
+        if (!path_is_dir) {
+          return std::unexpected(Error::ERROR_PATH_IS_DIR);
+        }
+        return lock_inode(root_inode_no);
+      }
+      if (!is_valid_path(p.string())) {
+        return std::unexpected(Error::ERROR_INVALID_PATH);
       }
 
-      auto parent_res = travel_path(p.parent_path(), create_missing, true);
+      auto parent_res = travel_path(p.parent_path(), o_create, false, true);
       if (!parent_res.has_value()) {
         return parent_res;
       }
@@ -456,12 +459,12 @@ namespace raid_fs {
       Error error = ERROR_UNSPECIFIED;
       iterate_dir_entries(*parent_inode_ptr, [&](const DirEntry &dir) {
         if (strcmp(dir.name, p.filename().c_str()) == 0) {
-          if (is_dir && dir.type != file_type::directory) {
+          if (path_is_dir && dir.type != file_type::directory) {
             error = ERROR_PATH_COMPONENT_IS_FILE;
             return true;
           }
-          if (!is_dir && dir.type != file_type::file) {
-            error = ERROR_PATH_COMPONENT_IS_DIR;
+          if (!path_is_dir && dir.type != file_type::file) {
+            error = ERROR_PATH_IS_DIR;
             return true;
           }
           p_inode_no = dir.inode_no;
@@ -470,16 +473,19 @@ namespace raid_fs {
         return false;
       });
       if (p_inode_no != 0) {
-        return lock_inode<false>(p_inode_no);
+        if (o_create && o_excl && !path_is_dir) {
+          return std::unexpected(ERROR_EXISTED_FILE);
+        }
+        return lock_inode(p_inode_no);
       }
-      if (!create_missing) {
+      if (!o_create) {
         if (error == ERROR_UNSPECIFIED) {
-          error = ERROR_UNEXISTED_FILE;
+          error = ERROR_NONEXISTENT_FILE;
         }
         return std::unexpected(error);
       }
       DirEntry new_entry;
-      new_entry.type = is_dir ? file_type::directory : file_type::file;
+      new_entry.type = path_is_dir ? file_type::directory : file_type::file;
       auto inode_opt = allocate_and_initialize_file_metadata(new_entry.type);
       if (!inode_opt.has_value()) {
         LOG_ERROR("failed to allocate space for {}", p.string());
@@ -493,7 +499,8 @@ namespace raid_fs {
         release_inode(new_entry.inode_no);
         return std::unexpected(ERROR_FILE_SYSTEM_FULL);
       }
-      return lock_inode<false>(new_entry.inode_no);
+
+      return lock_inode(new_entry.inode_no);
     }
 
     bool allocate_dir_entry(INode &inode, const DirEntry &new_entry) {
@@ -503,7 +510,6 @@ namespace raid_fs {
           reinterpret_cast<DirEntry *>(first_block->data.data());
       assert(first_dir_entry_ptr->type == file_type::free_dir_entry_head);
       auto free_dir_entry_no = first_dir_entry_ptr->inode_no;
-      uint64_t written_bytes = 0;
       if (free_dir_entry_no != 0) {
         auto data = read_data(inode, free_dir_entry_no * sizeof(DirEntry),
                               sizeof(DirEntry));
@@ -513,7 +519,9 @@ namespace raid_fs {
         free_dir_entry_no = inode.size / sizeof(DirEntry);
       }
       std::lock_guard lk(metadata_mutex);
-      written_bytes = write_data(
+      assert(free_dir_entry_no != 0);
+      assert(free_dir_entry_no * sizeof(DirEntry) != 0);
+      auto written_bytes = write_data(
           inode, free_dir_entry_no * sizeof(DirEntry),
           const_block_data_view_type(reinterpret_cast<const char *>(&new_entry),
                                      sizeof(DirEntry)),
@@ -521,6 +529,17 @@ namespace raid_fs {
       if (written_bytes == 0) {
         return false;
       }
+      /* auto tmp = read_data(inode, free_dir_entry_no * sizeof(DirEntry), */
+      /*                      sizeof(DirEntry)); */
+      /* auto tmp_ptr = reinterpret_cast<DirEntry *>(tmp.data()); */
+      /* LOG_ERROR("aaaaaaaaa type {} {}", int(tmp_ptr->type), */
+      /*           int(new_entry.type)); */
+      /* LOG_ERROR("aaaaaaaaa inode {} {}", int(tmp_ptr->inode_no), */
+      /*           int(new_entry.inode_no)); */
+      /* LOG_ERROR("aaaaaaaaa name {} {}", tmp_ptr->name,new_entry.name); */
+      /* assert(memcmp(tmp.data(), reinterpret_cast<const char *>(&new_entry),
+       */
+      /*               sizeof(DirEntry) == 0)); */
       return true;
     }
 
@@ -528,12 +547,12 @@ namespace raid_fs {
         INode &inode,
         std::function<bool(const DirEntry &)> dir_entry_callback) {
       assert(inode.type == file_type::directory);
+      assert(inode.size != 0);
+      assert(inode.size % sizeof(DirEntry) == 0);
       uint64_t remain_size = inode.size;
       bool finish = false;
       for (auto block_ptr : inode.block_ptrs) {
-        if (block_ptr == 0) {
-          throw std::runtime_error("empty block in directory");
-        }
+        assert(block_ptr != 0);
         uint64_t length = std::min(block_size, remain_size);
         iterate_bytes(
             block_ptr * block_size, length,

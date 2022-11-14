@@ -22,6 +22,51 @@ TEST_CASE("file_system") {
   auto channel = grpc::CreateChannel(fmt::format("localhost:{}", config.port),
                                      ::grpc::InsecureChannelCredentials());
   auto stub = ::raid_fs::FileSystem::NewStub(channel);
-
-  SUBCASE("create") {}
+  SUBCASE("open /") {
+    ::grpc::ClientContext context;
+    raid_fs::OpenRequest request;
+    request.set_path("/");
+    request.set_o_create(false);
+    request.set_o_excl(false);
+    raid_fs::OpenReply reply;
+    auto grpc_status = stub->Open(&context, request, &reply);
+    REQUIRE(grpc_status.ok());
+    REQUIRE(!reply.has_ok());
+    REQUIRE_EQ(reply.error(), ::raid_fs::ERROR_PATH_IS_DIR);
+  }
+  SUBCASE("open nonexistent file") {
+    ::grpc::ClientContext context;
+    raid_fs::OpenRequest request;
+    request.set_path("/foo/bar");
+    request.set_o_create(false);
+    request.set_o_excl(false);
+    raid_fs::OpenReply reply;
+    auto grpc_status = stub->Open(&context, request, &reply);
+    REQUIRE(grpc_status.ok());
+    REQUIRE(!reply.has_ok());
+    REQUIRE_EQ(reply.error(), ::raid_fs::ERROR_NONEXISTENT_FILE);
+  }
+  SUBCASE("create file") {
+    ::grpc::ClientContext context;
+    raid_fs::OpenRequest request;
+    request.set_path("/foo/bar");
+    request.set_o_create(true);
+    request.set_o_excl(true);
+    raid_fs::OpenReply reply;
+    auto grpc_status = stub->Open(&context, request, &reply);
+    REQUIRE(grpc_status.ok());
+    REQUIRE(reply.has_ok());
+  }
+  SUBCASE("recreate file") {
+    ::grpc::ClientContext context;
+    raid_fs::OpenRequest request;
+    request.set_path("/foo/bar");
+    request.set_o_create(true);
+    request.set_o_excl(true);
+    raid_fs::OpenReply reply;
+    auto grpc_status = stub->Open(&context, request, &reply);
+    REQUIRE(grpc_status.ok());
+    REQUIRE(!reply.has_ok());
+    REQUIRE_EQ(reply.error(), ::raid_fs::ERROR_EXISTED_FILE);
+  }
 }
