@@ -6,9 +6,7 @@ foreach(test_source IN LISTS test_sources)
   get_filename_component(test_prog ${test_source} NAME_WE)
   add_executable(${test_prog} ${test_source} ${fs_grpc_srcs} ${fs_proto_srcs}
                               ${error_proto_srcs})
-  target_link_libraries(
-    ${test_prog} PUBLIC gRPC::grpc++_unsecure yaml-cpp fmt::fmt
-                        CyyNaiveLib::log CyyNaiveLib::util)
+  target_link_libraries(${test_prog} PUBLIC ${LIBS})
   target_compile_definitions(${test_prog}
                              PRIVATE DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN)
   target_compile_definitions(

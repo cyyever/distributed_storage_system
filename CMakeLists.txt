@@ -45,20 +45,18 @@ add_executable(
   ${CMAKE_CURRENT_LIST_DIR}/fs_server.cpp ${fs_grpc_srcs} ${fs_proto_srcs}
   ${error_proto_srcs} ${raid_grpc_srcs} ${raid_proto_srcs})
 
+set(LIBS gRPC::grpc++_unsecure yaml-cpp fmt::fmt CyyAlgorithmLib
+         CyyNaiveLib::log)
+
 target_include_directories(fs_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(fs_server PUBLIC gRPC::grpc++_unsecure yaml-cpp fmt::fmt
-                                       CyyAlgorithmLib CyyNaiveLib::log)
+target_link_libraries(fs_server PUBLIC ${LIBS})
 
 add_executable(
   raid_node_server ${CMAKE_CURRENT_LIST_DIR}/raid_node_server.cpp
                    ${raid_grpc_srcs} ${raid_proto_srcs} ${error_proto_srcs})
 
 target_include_directories(raid_node_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(
-  raid_node_server PUBLIC gRPC::grpc++_unsecure yaml-cpp fmt::fmt
-                          CyyNaiveLib::log CyyNaiveLib::util)
-
-target_compile_definitions(raid_node_server PRIVATE _LARGEFILE64_SOURCE)
+target_link_libraries(raid_node_server PUBLIC ${LIBS})
 
 if(USE_ASAN)
   target_link_libraries(fs_server PUBLIC GoogleSanitizer::address)
@@ -69,10 +67,9 @@ if(USE_UBSAN)
   target_link_libraries(raid_node_server PUBLIC GoogleSanitizer::undefined)
 endif()
 
-# test
 add_subdirectory(test)
 
-option(BUILD_FUZZING "Build fuzzing" OFF)
+option(BUILD_FUZZING "Build fuzzing" ON)
 if(BUILD_FUZZING)
   add_subdirectory(fuzz_test)
 endif()

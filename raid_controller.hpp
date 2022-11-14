@@ -28,7 +28,7 @@ namespace raid_fs {
     virtual std::expected<std::map<uint64_t, std::string>, Error>
     read_blocks(const std::set<uint64_t> &block_no_set) = 0;
     virtual std::optional<Error>
-    write_blocks(const std::map<uint64_t, std::string> &blocks) = 0;
+    write_blocks(std::map<uint64_t, std::string> blocks) = 0;
   };
   class RAID6Controller : public RAIDController {
   public:
@@ -60,7 +60,7 @@ namespace raid_fs {
         if (!grpc_status.ok()) {
           LOG_ERROR("read block {} failed:{}", block_no,
                     grpc_status.error_message());
-          return std::unexpected(Error::ERROR_INTERNAL_ERROR);
+          return std::unexpected(Error::ERROR_FS_INTERNAL_ERROR);
         }
         if (reply.has_error()) {
           return std::unexpected(reply.error());
@@ -71,8 +71,8 @@ namespace raid_fs {
       return blocks;
     }
     std::optional<Error>
-    write_blocks(const std::map<uint64_t, std::string> &blocks) override {
-      for (auto const &[block_no, block] : blocks) {
+    write_blocks(std::map<uint64_t, std::string> blocks) override {
+      for (auto &[block_no, block] : blocks) {
         ::grpc::ClientContext context;
         BlockWriteRequest request;
         request.set_block_no(block_no);
@@ -83,7 +83,7 @@ namespace raid_fs {
         if (!grpc_status.ok()) {
           LOG_ERROR("write block {} failed:{}", block_no,
                     grpc_status.error_message());
-          return {Error::ERROR_INTERNAL_ERROR};
+          return {Error::ERROR_FS_INTERNAL_ERROR};
         }
         if (reply.has_error()) {
           LOG_ERROR("write block {} failed:{}", block_no, reply.error());

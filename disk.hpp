@@ -11,14 +11,16 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <unistd.h>
 #include <vector>
 
 #include <cyy/naive_lib/log/log.hpp>
 #include <cyy/naive_lib/util/error.hpp>
 #include <spdlog/fmt/fmt.h>
+#ifndef  _WIN32
+#include <unistd.h>
 #include <sys/file.h>
 #include <sys/types.h>
+#endif
 
 #include "config.hpp"
 #include "type.hpp"
@@ -67,6 +69,7 @@ namespace raid_fs {
     std::vector<std::string> disk;
   };
 
+#ifndef  _WIN32
   class Disk final : public VirtualDisk {
   public:
     Disk(size_t disk_capacity_, size_t block_size_, std::string file_name)
@@ -129,9 +132,11 @@ namespace raid_fs {
   private:
     int fd{-1};
   };
+#endif 
 
   inline std::shared_ptr<VirtualDisk> get_disk(const RAIDConfig &raid_config,
                                                size_t disk_id = 0) {
+#ifndef  _WIN32
     if (raid_config.use_memory_disk) {
       return std::make_shared<MemoryDisk>(raid_config.disk_capacity,
                                           raid_config.block_size);
@@ -139,6 +144,10 @@ namespace raid_fs {
     return std::make_shared<Disk>(
         raid_config.disk_capacity, raid_config.block_size,
         raid_config.disk_path_prefix + std::to_string(disk_id));
+#else
+      return std::make_shared<MemoryDisk>(raid_config.disk_capacity,
+                                          raid_config.block_size);
+#endif 
   }
 
 } // namespace raid_fs

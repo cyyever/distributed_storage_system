@@ -2,7 +2,6 @@ syntax = "proto3";
 package raid_fs;
 
 import "error.proto";
-import "google/protobuf/empty.proto";
 
 /*
    We mimic POSIX filesystem API for the distributed storage system.

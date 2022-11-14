@@ -81,7 +81,7 @@ namespace raid_fs {
       std::optional<Error> error_opt;
       iterate_dir_entries(*parent_inode_ptr,
                           [&](size_t entry_cnt, DirEntry &entry) {
-                            if (strcmp(entry.name, p.filename().c_str()) == 0) {
+                            if (strcmp(entry.name, p.filename().string().c_str()) == 0) {
                               if (entry.type != file_type::file) {
                                 error_opt = Error::ERROR_PATH_IS_DIR;
                               } else {
@@ -128,7 +128,7 @@ namespace raid_fs {
       std::optional<DirEntry> p_entry_opt;
       iterate_dir_entries(*parent_inode_ptr,
                           [&](size_t entry_cnt, DirEntry &entry) {
-                            if (strcmp(entry.name, p.filename().c_str()) == 0) {
+                            if (strcmp(entry.name, p.filename().string().c_str()) == 0) {
                               if (entry.type != file_type::directory) {
                                 error_opt = Error::ERROR_PATH_IS_FILE;
                               } else {
@@ -297,7 +297,7 @@ namespace raid_fs {
         blk.fs_version = 0;
         blk.bitmap_byte_offset = sizeof(SuperBlock);
         blk.next_inode_offset = 0;
-        blk.inode_number = block_number * 0.01;
+        blk.inode_number = static_cast<uint64_t>(block_number * 0.01);
         if (blk.inode_number == 0) {
           blk.inode_number = 1;
         }
@@ -650,7 +650,7 @@ namespace raid_fs {
       uint64_t p_inode_no = 0;
       Error error = ERROR_UNSPECIFIED;
       iterate_dir_entries(*parent_inode_ptr, [&](size_t, const DirEntry &dir) {
-        if (strcmp(dir.name, p.filename().c_str()) == 0) {
+        if (strcmp(dir.name, p.filename().string().c_str()) == 0) {
           if (path_is_dir && dir.type != file_type::directory) {
             error = ERROR_PATH_COMPONENT_IS_FILE;
             return std::pair<bool, bool>{false, true};
@@ -683,11 +683,11 @@ namespace raid_fs {
         LOG_ERROR("failed to allocate space for {}", p.string());
         return std::unexpected(ERROR_FILE_SYSTEM_FULL);
       }
-      strcpy(new_entry.name, p.filename().c_str());
+      strcpy(new_entry.name, p.filename().string().c_str());
       new_entry.inode_no = inode_opt.value();
       std::unique_lock lk(metadata_mutex);
       if (!allocate_dir_entry(*parent_inode_ptr, new_entry)) {
-        LOG_ERROR("failed to allocate space for {}", p.string());
+        LOG_DEBUG("failed to allocate space for {}", p.string());
         release_inode(new_entry.inode_no);
         return std::unexpected(ERROR_FILE_SYSTEM_FULL);
       }
