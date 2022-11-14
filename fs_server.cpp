@@ -33,7 +33,33 @@ namespace raid_fs {
       } else {
         auto [inode_no, inode] = inode_or_error.value();
         response->mutable_ok()->set_fd(inode_no);
-        response->mutable_ok()->set_size(inode.size);
+        response->mutable_ok()->set_file_size(inode.size);
+      }
+      return ::grpc::Status::OK;
+    }
+    ::grpc::Status Read(::grpc::ServerContext *,
+                        const ::raid_fs::ReadRequest *request,
+                        ::raid_fs::ReadReply *response) override {
+      auto res_or_error =
+          raid_fs.read(request->fd(), request->offset(), request->count());
+      if (!res_or_error.has_value()) {
+        response->set_error(res_or_error.error());
+      } else {
+        response->mutable_ok()->set_data(std::move(res_or_error.value().first));
+        response->mutable_ok()->set_file_size(res_or_error.value().second.size);
+      }
+      return ::grpc::Status::OK;
+    }
+    ::grpc::Status Write(::grpc::ServerContext *,
+                         const ::raid_fs::WriteRequest *request,
+                         ::raid_fs::WriteReply *response) override {
+      auto res_or_error =
+          raid_fs.write(request->fd(), request->offset(), request->data());
+      if (!res_or_error.has_value()) {
+        response->set_error(res_or_error.error());
+      } else {
+        response->mutable_ok()->set_written_size(res_or_error.value().first);
+        response->mutable_ok()->set_file_size(res_or_error.value().second.size);
       }
       return ::grpc::Status::OK;
     }

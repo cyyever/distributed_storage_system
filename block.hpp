@@ -19,6 +19,7 @@ namespace raid_fs {
     uint64_t bitmap_byte_offset;
     uint64_t inode_table_offset;
     uint64_t inode_number;
+    uint64_t next_inode_offset;
     uint64_t data_table_offset;
     uint64_t data_block_number;
   };

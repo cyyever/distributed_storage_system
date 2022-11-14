@@ -59,6 +59,39 @@ namespace raid_fs {
       return std::pair<uint64_t, INode>{inode_no, get_inode(inode_no)};
     }
 
+    std::expected<std::pair<block_data_type, INode>, Error>
+    read(uint64_t inode_no, uint64_t offset, uint64_t length) {
+      std::unique_lock metadata_lock(metadata_mutex);
+      if (!is_valid_inode(inode_no)) {
+        return std::unexpected(ERROR_INVALID_FD);
+      }
+      auto inode_lock = shared_lock_inode(inode_no);
+      metadata_lock.unlock();
+      auto inode = get_inode(inode_no);
+      if (inode.type != file_type::file) {
+        return std::unexpected(ERROR_PATH_IS_DIR);
+      }
+      return std::pair<block_data_type, INode>{read_data(inode, offset, length),
+                                               inode};
+    }
+
+    std::expected<std::pair<uint64_t, INode>, Error>
+    write(uint64_t inode_no, uint64_t offset,
+          const_block_data_view_type data_view) {
+      std::unique_lock metadata_lock(metadata_mutex);
+      if (!is_valid_inode(inode_no)) {
+        return std::unexpected(ERROR_INVALID_FD);
+      }
+      auto inode_lock = lock_inode(inode_no);
+      metadata_lock.unlock();
+      auto [inode_ptr, block_ref] = get_mutable_inode(inode_no);
+      if (inode_ptr->type != file_type::file) {
+        return std::unexpected(ERROR_PATH_IS_DIR);
+      }
+      auto written_bytes = write_data(*inode_ptr, offset, data_view);
+      return std::pair<uint64_t, INode>{written_bytes, *inode_ptr};
+    }
+
   private:
     class SyncThread final : public cyy::naive_lib::runnable {
     public:
@@ -107,6 +140,19 @@ namespace raid_fs {
       block_ref.cancel_writeback();
       return *inode_ptr;
     }
+    bool is_valid_inode(uint64_t inode_no) {
+      auto const super_block = get_super_block();
+      auto offset = super_block.bitmap_byte_offset + inode_no / 8;
+      bool res = false;
+      iterate_bytes(offset, 1, [&res, inode_no](auto view, auto) {
+        auto new_byte = std::byte(view[0]);
+        std::byte mask{0b10000000};
+        mask >>= (inode_no % 8);
+        res = ((mask & new_byte) == mask);
+        return std::pair<bool, bool>{false, false};
+      });
+      return res;
+    }
     std::pair<INode *, BlockCache::value_reference>
     get_mutable_inode(uint64_t inode_no) {
       auto const super_block = get_super_block();
@@ -133,6 +179,7 @@ namespace raid_fs {
         strcpy(blk.fs_type, raid_fs_type);
         blk.fs_version = 0;
         blk.bitmap_byte_offset = sizeof(SuperBlock);
+        blk.next_inode_offset = 0;
         blk.inode_number = block_number * 0.01;
         if (blk.inode_number == 0) {
           blk.inode_number = 1;
@@ -211,7 +258,23 @@ namespace raid_fs {
     std::optional<uint64_t> allocate_inode() {
       const auto blk = get_super_block();
       LOG_DEBUG("inode_number is {}", blk.inode_number);
-      return allocate_block(blk.bitmap_byte_offset, blk.inode_number / 8);
+      auto next_inode_offset = blk.next_inode_offset;
+      assert(next_inode_offset < blk.inode_number / 8);
+      auto res = allocate_block(blk.bitmap_byte_offset + next_inode_offset,
+                                blk.inode_number / 8 - next_inode_offset);
+      if (res.has_value()) {
+        res.value() += next_inode_offset * 8;
+        next_inode_offset++;
+        next_inode_offset %= (blk.inode_number / 8);
+      } else if (next_inode_offset > 0) {
+        res = allocate_block(blk.bitmap_byte_offset, next_inode_offset);
+        next_inode_offset = 0;
+      }
+      if (res.has_value()) {
+        auto block_ref = get_mutable_block(super_block_no);
+        block_ref->as_super_block().next_inode_offset = next_inode_offset;
+      }
+      return res;
     }
 
     bool release_inode(uint64_t inode_no) {
@@ -276,6 +339,7 @@ namespace raid_fs {
         data.append(data_block_ptr->data.data() + offset % block_size,
                     partial_length);
         offset += partial_length;
+        length -= partial_length;
       }
       return data;
     }
@@ -340,14 +404,14 @@ namespace raid_fs {
             std::byte zero_byte{0b00000000};
             for (size_t i = 0; i < view.size(); i++) {
               if ((unsigned char)(view[i]) < 255) {
-                uint64_t inode_no = (byte_offset + i - bitmap_byte_offset) * 8;
+                uint64_t block_no = (byte_offset + i - bitmap_byte_offset) * 8;
                 std::byte mask{0b10000000};
                 auto new_byte = std::byte(view[i]);
-                for (size_t j = 0; j < 8; j++, inode_no++, mask >>= 1) {
+                for (size_t j = 0; j < 8; j++, block_no++, mask >>= 1) {
                   if ((mask & new_byte) == zero_byte) {
                     new_byte |= mask;
                     view[i] = std::to_integer<unsigned char>(new_byte);
-                    res = inode_no;
+                    res = block_no;
                     return std::pair<bool, bool>{true, true};
                   }
                 }
@@ -410,29 +474,25 @@ namespace raid_fs {
     using INodeSharedLock =
         std::tuple<uint64_t, std::shared_lock<std::shared_mutex>,
                    std::shared_ptr<std::shared_mutex>>;
-    template <bool use_shared_lock = false> auto lock_inode(uint64_t inode_no) {
-      std::shared_lock lk(metadata_mutex);
-      while (!inode_mutexes.contains(inode_no)) {
-        lk.unlock();
-        {
-          std::unique_lock lk2(metadata_mutex);
-          if (!inode_mutexes.contains(inode_no)) {
-            inode_mutexes[inode_no] = std::make_shared<std::shared_mutex>();
-          }
-        }
-        lk.lock();
+    INodeLock lock_inode(uint64_t inode_no) {
+      std::unique_lock lk(metadata_mutex);
+      if (!inode_mutexes.contains(inode_no)) {
+        inode_mutexes[inode_no] = std::make_shared<std::shared_mutex>();
       }
       auto mutex_ptr = inode_mutexes[inode_no];
       lk.unlock();
-      if constexpr (use_shared_lock) {
-        return std::make_tuple(inode_no,
-                               std::shared_lock<std::shared_mutex>(*mutex_ptr),
-                               mutex_ptr);
-      } else {
-        return std::make_tuple(inode_no,
-                               std::unique_lock<std::shared_mutex>(*mutex_ptr),
-                               mutex_ptr);
+      return std::make_tuple(
+          inode_no, std::unique_lock<std::shared_mutex>(*mutex_ptr), mutex_ptr);
+    }
+    INodeSharedLock shared_lock_inode(uint64_t inode_no) {
+      std::unique_lock lk(metadata_mutex);
+      if (!inode_mutexes.contains(inode_no)) {
+        inode_mutexes[inode_no] = std::make_shared<std::shared_mutex>();
       }
+      auto mutex_ptr = inode_mutexes[inode_no];
+      lk.unlock();
+      return std::make_tuple(
+          inode_no, std::shared_lock<std::shared_mutex>(*mutex_ptr), mutex_ptr);
     }
 
     std::expected<INodeLock, Error> travel_path(const std::filesystem::path &p,
@@ -493,9 +553,9 @@ namespace raid_fs {
       }
       strcpy(new_entry.name, p.filename().c_str());
       new_entry.inode_no = inode_opt.value();
+      std::unique_lock lk(metadata_mutex);
       if (!allocate_dir_entry(*parent_inode_ptr, new_entry)) {
         LOG_ERROR("failed to allocate space for {}", p.string());
-        std::unique_lock lk(metadata_mutex);
         release_inode(new_entry.inode_no);
         return std::unexpected(ERROR_FILE_SYSTEM_FULL);
       }
@@ -518,7 +578,6 @@ namespace raid_fs {
       } else {
         free_dir_entry_no = inode.size / sizeof(DirEntry);
       }
-      std::lock_guard lk(metadata_mutex);
       assert(free_dir_entry_no != 0);
       assert(free_dir_entry_no * sizeof(DirEntry) != 0);
       auto written_bytes = write_data(
@@ -587,7 +646,7 @@ namespace raid_fs {
     size_t block_size;
     size_t block_number;
     BlockCache block_cache;
-    std::shared_mutex metadata_mutex;
+    std::recursive_mutex metadata_mutex;
     std::unordered_map<uint64_t, std::shared_ptr<std::shared_mutex>>
         inode_mutexes;
     SyncThread sync_thread;

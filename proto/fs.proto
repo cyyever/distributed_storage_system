@@ -21,7 +21,7 @@ message OpenRequest {
 
 message OpenOKReply {
   uint64 fd = 1;
-  uint64 size = 2;
+  uint64 file_size = 2;
 }
 
 message OpenReply {
@@ -38,8 +38,8 @@ message ReadRequest {
 }
 
 message ReadOKReply {
-  uint64 fd = 1;
-  uint64 size = 2;
+  bytes data = 1;
+  uint64 file_size = 2;
 }
 
 message ReadReply {
@@ -52,12 +52,12 @@ message ReadReply {
 message WriteRequest {
   uint64 fd = 1;
   uint64 offset = 2;
-  uint64 count = 3;
+  bytes data = 3;
 }
 
 message WriteOKReply {
-  uint64 fd = 1;
-  uint64 size = 2;
+  uint64 written_size = 1;
+  uint64 file_size = 2;
 }
 
 message WriteReply {
