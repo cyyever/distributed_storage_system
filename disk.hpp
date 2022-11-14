@@ -92,7 +92,7 @@ namespace raid_fs {
         return block;
       }
       if (res > 0) {
-        if (res != block_size) {
+        if (static_cast<uint64_t>(res) != block_size) {
           throw std::runtime_error(fmt::format(
               "read disk block {} with unmatched size:{}", block_no, res));
         }
