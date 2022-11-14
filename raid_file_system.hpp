@@ -59,15 +59,108 @@ namespace raid_fs {
       return std::pair<uint64_t, INode>{inode_no, get_inode(inode_no)};
     }
 
-    std::optional<Error> remove_file(const std::string &path) {
-      if (path == "/") {
+    std::optional<Error> remove_file(const std::filesystem::path &p) {
+      if (p == "/") {
         return Error::ERROR_PATH_IS_DIR;
       }
-      auto res = travel_path(std::filesystem::path(path).parent_path(), false,
-                             false, true);
-      if (!res.has_value()) {
-        return std::unexpected(res.error());
+      auto parent_res = travel_path(p.parent_path(), false, false, true);
+      if (!parent_res.has_value()) {
+        return parent_res.error();
       }
+      auto parent_inode_no = std::get<0>(parent_res.value());
+      auto [parent_inode_ptr, parent_inode_block_ref] =
+          get_mutable_inode(parent_inode_no);
+
+      auto first_block = get_mutable_block(parent_inode_ptr->block_ptrs[0]);
+      DirEntry *first_dir_entry_ptr =
+          reinterpret_cast<DirEntry *>(first_block->data.data());
+      assert(first_dir_entry_ptr->type == file_type::free_dir_entry_head);
+
+      std::optional<uint64_t> p_inode_no_opt;
+      std::optional<Error> error_opt;
+      iterate_dir_entries(*parent_inode_ptr,
+                          [&](size_t entry_cnt, DirEntry &entry) {
+                            if (strcmp(entry.name, p.filename().c_str()) == 0) {
+                              if (entry.type != file_type::file) {
+                                error_opt = Error::ERROR_PATH_IS_DIR;
+                              } else {
+                                p_inode_no_opt = entry.inode_no;
+                                entry.inode_no = first_dir_entry_ptr->inode_no;
+                                first_dir_entry_ptr->inode_no = entry_cnt;
+                                entry.type = file_type::free_dir_entry;
+                              }
+                              return std::pair<bool, bool>{true, false};
+                            }
+                            return std::pair<bool, bool>{false, false};
+                          });
+      if (error_opt) {
+        return error_opt;
+      }
+
+      // no such file
+      if (!p_inode_no_opt.has_value()) {
+        return ERROR_NONEXISTENT_FILE;
+      }
+      auto file_lock = lock_inode(*p_inode_no_opt);
+      release_file_metadata(*p_inode_no_opt);
+      return {};
+    }
+
+    std::optional<Error> remove_dir(const std::filesystem::path &p) {
+      if (p == "/") {
+        return Error::ERROR_INVALID_PATH;
+      }
+      auto parent_res = travel_path(p.parent_path(), false, false, true);
+      if (!parent_res.has_value()) {
+        return parent_res.error();
+      }
+      auto parent_inode_no = std::get<0>(parent_res.value());
+      auto [parent_inode_ptr, parent_inode_block_ref] =
+          get_mutable_inode(parent_inode_no);
+
+      auto first_block = get_mutable_block(parent_inode_ptr->block_ptrs[0]);
+      DirEntry *first_dir_entry_ptr =
+          reinterpret_cast<DirEntry *>(first_block->data.data());
+      assert(first_dir_entry_ptr->type == file_type::free_dir_entry_head);
+
+      std::optional<Error> error_opt;
+      std::optional<DirEntry> p_entry_opt;
+      iterate_dir_entries(*parent_inode_ptr,
+                          [&](size_t entry_cnt, DirEntry &entry) {
+                            if (strcmp(entry.name, p.filename().c_str()) == 0) {
+                              if (entry.type != file_type::directory) {
+                                error_opt = Error::ERROR_PATH_IS_FILE;
+                              } else {
+                                p_entry_opt = entry;
+                                entry.inode_no = first_dir_entry_ptr->inode_no;
+                                first_dir_entry_ptr->inode_no = entry_cnt;
+                                entry.type = file_type::free_dir_entry;
+                              }
+                              return std::pair<bool, bool>{true, false};
+                            }
+                            return std::pair<bool, bool>{false, false};
+                          });
+      if (error_opt) {
+        return error_opt;
+      }
+      // no such file
+      if (!p_entry_opt.has_value()) {
+        return ERROR_NONEXISTENT_DIR;
+      }
+      auto p_lock = lock_inode(p_entry_opt.value().inode_no);
+      auto [p_inode_ptr, p_inode_block_ref] =
+          get_mutable_inode(std::get<0>(p_lock));
+
+      size_t entry_number = 0;
+      iterate_dir_entries(*p_inode_ptr, [&](size_t, DirEntry &) {
+        entry_number++;
+        return std::pair<bool, bool>{false, true};
+      });
+      if (entry_number > 0) {
+        allocate_dir_entry(*parent_inode_ptr, p_entry_opt.value());
+        return ERROR_NOT_EMPTY_DIR;
+      }
+      release_file_metadata(p_entry_opt.value().inode_no);
       return {};
     }
 
@@ -270,10 +363,12 @@ namespace raid_fs {
     void release_file_metadata(uint64_t inode_no) {
       std::unique_lock lk(metadata_mutex);
       auto inode = get_inode(inode_no);
-      for(auto block_no:inode.block_ptrs) {
-        fdsfdsfdsfdsfsdfdsfds
-
+      for (auto block_no : inode.block_ptrs) {
+        if (block_no != 0) {
+          release_data_block(block_no);
+        }
       }
+      release_inode(inode_no);
     }
 
     std::optional<uint64_t> allocate_inode() {
@@ -303,10 +398,10 @@ namespace raid_fs {
       return release_block(blk.bitmap_byte_offset, inode_no);
     }
 
-    bool release_data_block(uint64_t data_block_no) {
+    bool release_data_block(uint64_t block_no) {
       const auto blk = get_super_block();
       return release_block(blk.bitmap_byte_offset + blk.inode_number / 8,
-                           data_block_no);
+                           block_no - blk.data_table_offset);
     }
 
     uint64_t write_data(INode &inode, uint64_t offset,
@@ -351,8 +446,10 @@ namespace raid_fs {
       return written_bytes;
     }
 
-    block_data_type read_data(INode &inode, uint64_t offset, uint64_t length) {
+    block_data_type read_data(INode &inode, uint64_t offset, uint64_t length,
+                              bool check_res = false) {
       block_data_type data;
+      auto old_length = length;
       while (offset < inode.size) {
         auto data_block_ptr = get_data_block_of_file(inode, offset);
         auto partial_length =
@@ -361,6 +458,10 @@ namespace raid_fs {
                     partial_length);
         offset += partial_length;
         length -= partial_length;
+      }
+      if (check_res && data.size() != old_length) {
+        throw std::runtime_error(fmt::format("invalid read operation {} {}",
+                                             data.size(), old_length));
       }
       return data;
     }
@@ -534,24 +635,24 @@ namespace raid_fs {
       if (!parent_res.has_value()) {
         return parent_res;
       }
-      auto [parent_inode_ptr, parant_inode_block_ref] =
+      auto [parent_inode_ptr, parent_inode_block_ref] =
           get_mutable_inode(std::get<0>(parent_res.value()));
       uint64_t p_inode_no = 0;
       Error error = ERROR_UNSPECIFIED;
-      iterate_dir_entries(*parent_inode_ptr, [&](const DirEntry &dir) {
+      iterate_dir_entries(*parent_inode_ptr, [&](size_t, const DirEntry &dir) {
         if (strcmp(dir.name, p.filename().c_str()) == 0) {
           if (path_is_dir && dir.type != file_type::directory) {
             error = ERROR_PATH_COMPONENT_IS_FILE;
-            return true;
+            return std::pair<bool, bool>{false, true};
           }
           if (!path_is_dir && dir.type != file_type::file) {
             error = ERROR_PATH_IS_DIR;
-            return true;
+            return std::pair<bool, bool>{false, true};
           }
           p_inode_no = dir.inode_no;
-          return true;
+          return std::pair<bool, bool>{false, true};
         }
-        return false;
+        return std::pair<bool, bool>{false, false};
       });
       if (p_inode_no != 0) {
         if (o_create && o_excl && !path_is_dir) {
@@ -592,8 +693,9 @@ namespace raid_fs {
       assert(first_dir_entry_ptr->type == file_type::free_dir_entry_head);
       auto free_dir_entry_no = first_dir_entry_ptr->inode_no;
       if (free_dir_entry_no != 0) {
+        assert(inode.size >= free_dir_entry_no * sizeof(DirEntry));
         auto data = read_data(inode, free_dir_entry_no * sizeof(DirEntry),
-                              sizeof(DirEntry));
+                              sizeof(DirEntry), true);
         first_dir_entry_ptr->inode_no =
             reinterpret_cast<DirEntry *>(data.data())->inode_no;
       } else {
@@ -612,35 +714,42 @@ namespace raid_fs {
       return true;
     }
 
-    void iterate_dir_entries(
-        INode &inode,
-        std::function<bool(const DirEntry &)> dir_entry_callback) {
+    void
+    iterate_dir_entries(INode &inode,
+                        std::function<std::pair<bool, bool>(size_t, DirEntry &)>
+                            dir_entry_callback) {
       assert(inode.type == file_type::directory);
       assert(inode.size != 0);
       assert(inode.size % sizeof(DirEntry) == 0);
       uint64_t remain_size = inode.size;
       bool finish = false;
+      size_t entry_cnt = 0;
       for (auto block_ptr : inode.block_ptrs) {
         assert(block_ptr != 0);
         uint64_t length = std::min(block_size, remain_size);
         iterate_bytes(
             block_ptr * block_size, length,
-            [&finish, &dir_entry_callback](block_data_view_type view,
-                                           size_t) -> std::pair<bool, bool> {
+            [&finish, &dir_entry_callback, &entry_cnt](
+                block_data_view_type view, size_t) -> std::pair<bool, bool> {
               assert(view.size() % sizeof(DirEntry) == 0);
               DirEntry *dir_entry_ptr =
                   reinterpret_cast<DirEntry *>(view.data());
-              for (size_t i = 0; i < view.size() / sizeof(DirEntry); i++) {
+              bool save = false;
+              for (size_t i = 0; i < view.size() / sizeof(DirEntry);
+                   i++, entry_cnt++) {
                 if (dir_entry_ptr[i].type == file_type::free_dir_entry ||
                     dir_entry_ptr[i].type == file_type::free_dir_entry_head) {
                   continue;
                 }
-                if (dir_entry_callback(dir_entry_ptr[i])) {
-                  finish = true;
-                  return {false, true};
+                auto res = dir_entry_callback(entry_cnt, dir_entry_ptr[i]);
+                if (res.first) {
+                  save = true;
+                }
+                if (res.second) {
+                  return {save, true};
                 }
               }
-              return {false, false};
+              return {save, false};
             });
         remain_size -= length;
         if (!remain_size || finish) {

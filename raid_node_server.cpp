@@ -23,6 +23,8 @@ namespace raid_fs {
                         const ::raid_fs::BlockReadRequest *request,
                         ::raid_fs::BlockReadReply *response) override {
       if (request->block_no() >= disk_ptr->get_block_number()) {
+        LOG_ERROR("invalid block no {} {}", request->block_no(),
+                  disk_ptr->get_block_number());
         response->set_error(Error::ERROR_OUT_OF_RANGE);
         return ::grpc::Status::OK;
       }
@@ -40,6 +42,8 @@ namespace raid_fs {
                          const ::raid_fs::BlockWriteRequest *request,
                          ::raid_fs::BlockWriteReply *response) override {
       if (request->block_no() >= disk_ptr->get_block_number()) {
+        LOG_ERROR("invalid block no {} {}", request->block_no(),
+                  disk_ptr->get_block_number());
         response->set_error(Error::ERROR_OUT_OF_RANGE);
         return ::grpc::Status::OK;
       }

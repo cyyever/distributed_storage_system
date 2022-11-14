@@ -63,6 +63,24 @@ namespace raid_fs {
       }
       return ::grpc::Status::OK;
     }
+    ::grpc::Status Remove(::grpc::ServerContext *,
+                          const ::raid_fs::RemoveRequest *request,
+                          ::raid_fs::RemoveReply *response) override {
+      auto error_opt = raid_fs.remove_file(request->path());
+      if (error_opt.has_value()) {
+        response->set_error(error_opt.value());
+      }
+      return ::grpc::Status::OK;
+    }
+    ::grpc::Status RemoveDir(::grpc::ServerContext *,
+                             const ::raid_fs::RemoveDirRequest *request,
+                             ::raid_fs::RemoveDirReply *response) override {
+      auto error_opt = raid_fs.remove_dir(request->path());
+      if (error_opt.has_value()) {
+        response->set_error(error_opt.value());
+      }
+      return ::grpc::Status::OK;
+    }
 
   private:
     RAIDFileSystem raid_fs;

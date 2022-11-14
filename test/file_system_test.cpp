@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <optional>
 
+#include <cyy/naive_lib/log/log.hpp>
 #include <doctest/doctest.h>
 #include <fmt/format.h>
 #include <grpc/grpc.h>
@@ -162,5 +163,46 @@ TEST_CASE("file_system") {
     REQUIRE_EQ(reply.ok().data().size(), 2 * config.block_size);
     REQUIRE(std::ranges::all_of(reply.ok().data(),
                                 [](auto const c) { return c == '1'; }));
+  }
+
+  SUBCASE("remove file") {
+    {
+      ::grpc::ClientContext context;
+      raid_fs::RemoveRequest request;
+      request.set_path("/foo");
+      raid_fs::RemoveReply reply;
+      auto grpc_status = stub->Remove(&context, request, &reply);
+      REQUIRE(grpc_status.ok());
+      REQUIRE(reply.has_error());
+      REQUIRE_EQ(reply.error(), ::raid_fs::ERROR_PATH_IS_DIR);
+    }
+    {
+      ::grpc::ClientContext context;
+      raid_fs::RemoveRequest request;
+      request.set_path("/foo/bar");
+      raid_fs::RemoveReply reply;
+      auto grpc_status = stub->Remove(&context, request, &reply);
+      REQUIRE(grpc_status.ok());
+      REQUIRE(!reply.has_error());
+    }
+    {
+      ::grpc::ClientContext context;
+      raid_fs::RemoveRequest request;
+      request.set_path("/foo/bar");
+      raid_fs::RemoveReply reply;
+      auto grpc_status = stub->Remove(&context, request, &reply);
+      REQUIRE(grpc_status.ok());
+      REQUIRE(reply.has_error());
+      REQUIRE_EQ(reply.error(), ::raid_fs::ERROR_NONEXISTENT_FILE);
+    }
+  }
+  SUBCASE("remove dir") {
+    ::grpc::ClientContext context;
+    raid_fs::RemoveDirRequest request;
+    request.set_path("/foo");
+    raid_fs::RemoveDirReply reply;
+    auto grpc_status = stub->RemoveDir(&context, request, &reply);
+    REQUIRE(grpc_status.ok());
+    REQUIRE(!reply.has_error());
   }
 }

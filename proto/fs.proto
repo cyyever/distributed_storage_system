@@ -76,7 +76,6 @@ message RemoveReply {
 
 message RemoveDirRequest {
   string path = 1;
-  bool recursive = 2;
 }
 
 message RemoveDirReply {
@@ -94,6 +93,6 @@ service FileSystem {
   rpc Write(WriteRequest) returns (WriteReply) {}
   /* Delete a file. */
   rpc Remove(RemoveRequest) returns (RemoveReply) {}
-  /* Delete a directory recursively. */
+  /* Delete an empty directory. */
   rpc RemoveDir(RemoveDirRequest) returns (RemoveDirReply) {}
 }

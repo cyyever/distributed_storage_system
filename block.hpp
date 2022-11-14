@@ -12,7 +12,7 @@
 
 #include "type.hpp"
 namespace raid_fs {
-  struct alignas(128) SuperBlock {
+  struct SuperBlock {
     char fs_type[8];
     uint16_t raid_version;
     uint16_t fs_version;
@@ -23,7 +23,7 @@ namespace raid_fs {
     uint64_t data_table_offset;
     uint64_t data_block_number;
   };
-  static_assert(sizeof(SuperBlock) == 128);
+  static_assert(sizeof(SuperBlock) == 64);
   enum class file_type : uint8_t {
     free_dir_entry_head = 0,
     directory = 1,
@@ -31,9 +31,9 @@ namespace raid_fs {
     free_dir_entry = 3,
   };
 
-  struct alignas(128) INode {
+  struct INode {
     file_type type{};
-    uint64_t size{}; // file size or the number of files in the directory
+    uint64_t size{}; // file size
     uint64_t block_ptrs[14]{};
 
     uint64_t get_max_file_size(uint64_t block_size) {
@@ -63,10 +63,11 @@ namespace raid_fs {
   };
   using block_ptr_type = std::shared_ptr<Block>;
 
-  struct alignas(256) DirEntry {
+  struct DirEntry {
     file_type type{};
     uint64_t inode_no{};
     char name[128]{};
+    char pading[109]{};
   };
   static_assert(sizeof(DirEntry) == 256);
 
