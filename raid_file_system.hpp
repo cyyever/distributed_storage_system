@@ -12,6 +12,7 @@
 #include <tuple>
 #include <utility>
 
+#include <cyy/algorithm/dict/lru_cache.hpp>
 #include <cyy/naive_lib/util/runnable.hpp>
 #include <fmt/format.h>
 
@@ -45,7 +46,7 @@ namespace raid_fs {
       if (std::string(get_super_block().fs_type) != raid_fs_type) {
         make_filesystem();
       }
-      /* sync_thread.start("sync thread"); */
+      sync_thread.start("sync thread");
     }
 
     ~RAIDFileSystem() { sync_thread.stop(); }
@@ -206,13 +207,23 @@ namespace raid_fs {
     private:
       void run(const std::stop_token &st) override {
         while (true) {
-          // TODO
-          /* std::unique_lock lk(impl_ptr->block_mu); */
-          /* if (cv.wait_for(lk, st, std::chrono::minutes(5), */
-          /*                 [&st]() { return st.stop_requested(); })) { */
-          /*   return; */
-          /* } */
+          std::unique_lock lk(impl_ptr->metadata_mutex);
+          if (cv.wait_for(lk, st, std::chrono::minutes(5),
+                          [&st]() { return st.stop_requested(); })) {
+            return;
+          }
+          lk.unlock();
           impl_ptr->block_cache.flush();
+          lk.lock();
+          // release unused mutex
+          while (impl_ptr->inode_mutexes.size() > 0 && !needs_stop()) {
+            auto [k, v] = impl_ptr->inode_mutexes.pop_oldest();
+            if (!v->try_lock()) {
+              impl_ptr->inode_mutexes.emplace(k, v);
+              break;
+            }
+            v->unlock();
+          }
         }
       }
 
@@ -598,20 +609,20 @@ namespace raid_fs {
                    std::shared_ptr<std::shared_mutex>>;
     INodeLock lock_inode(uint64_t inode_no) {
       std::unique_lock lk(metadata_mutex);
-      if (!inode_mutexes.contains(inode_no)) {
-        inode_mutexes[inode_no] = std::make_shared<std::shared_mutex>();
+      if (inode_mutexes.find(inode_no) == inode_mutexes.end()) {
+        inode_mutexes.emplace(inode_no, std::make_shared<std::shared_mutex>());
       }
-      auto mutex_ptr = inode_mutexes[inode_no];
+      auto mutex_ptr = inode_mutexes.find(inode_no)->second;
       lk.unlock();
       return std::make_tuple(
           inode_no, std::unique_lock<std::shared_mutex>(*mutex_ptr), mutex_ptr);
     }
     INodeSharedLock shared_lock_inode(uint64_t inode_no) {
       std::unique_lock lk(metadata_mutex);
-      if (!inode_mutexes.contains(inode_no)) {
-        inode_mutexes[inode_no] = std::make_shared<std::shared_mutex>();
+      if (inode_mutexes.find(inode_no) == inode_mutexes.end()) {
+        inode_mutexes.emplace(inode_no, std::make_shared<std::shared_mutex>());
       }
-      auto mutex_ptr = inode_mutexes[inode_no];
+      auto mutex_ptr = inode_mutexes.find(inode_no)->second;
       lk.unlock();
       return std::make_tuple(
           inode_no, std::shared_lock<std::shared_mutex>(*mutex_ptr), mutex_ptr);
@@ -766,7 +777,7 @@ namespace raid_fs {
     size_t block_number;
     BlockCache block_cache;
     std::recursive_mutex metadata_mutex;
-    std::unordered_map<uint64_t, std::shared_ptr<std::shared_mutex>>
+    cyy::algorithm::lru_cache<uint64_t, std::shared_ptr<std::shared_mutex>>
         inode_mutexes;
     SyncThread sync_thread;
     uint64_t root_inode_no{};
