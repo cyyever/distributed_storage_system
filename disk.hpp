@@ -51,7 +51,7 @@ namespace raid_fs {
         : VirtualDisk(disk_capacity_, block_size_) {
       disk.resize(block_number);
     }
-    virtual ~MemoryDisk() = default;
+    ~MemoryDisk() override = default;
 
     std::expected<block_data_type, int> read(size_t block_no) override {
       auto &block = disk.at(block_no);
@@ -88,6 +88,7 @@ namespace raid_fs {
         throw std::runtime_error("failed to lock disk");
       }
     }
+
     std::expected<block_data_type, int> read(size_t block_no) override {
       block_data_type block;
       block.resize(block_size, '\0');
@@ -124,7 +125,7 @@ namespace raid_fs {
       return {};
     }
 
-    virtual ~Disk() {
+    ~Disk() override {
       if (fd >= 0) {
         close(fd);
       }

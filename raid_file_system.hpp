@@ -518,7 +518,7 @@ namespace raid_fs {
             mask >>= (block_no_in_table % 8);
             if ((mask & new_byte) == mask) {
               new_byte |= (~mask);
-              view[0] = std::to_integer<unsigned char>(new_byte);
+              view[0] = std::to_integer<char>(new_byte);
               res = true;
               return std::pair<bool, bool>{true, true};
             }
