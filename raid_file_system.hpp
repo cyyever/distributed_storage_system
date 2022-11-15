@@ -32,7 +32,7 @@ namespace raid_fs {
           block_number(raid_controller_ptr->get_capacity() / fs_cfg.block_size),
           block_cache(fs_cfg.block_pool_size, fs_cfg.block_size,
                       raid_controller_ptr),
-          sync_thread(this) {
+          sync_thread(this,std::chrono::seconds(fs_cfg.block_cache_seconds)) {
       raid_fs::Block::block_size = fs_cfg.block_size;
       if (block_size % sizeof(INode) != 0) {
         throw std::runtime_error("block size is not a multiple of inodes");
@@ -202,14 +202,14 @@ namespace raid_fs {
   private:
     class SyncThread final : public cyy::naive_lib::runnable {
     public:
-      SyncThread(RAIDFileSystem *impl_ptr_) : impl_ptr(impl_ptr_) {}
+      SyncThread(RAIDFileSystem *impl_ptr_, std::chrono::seconds  cache_time_) : impl_ptr(impl_ptr_),cache_time(std::move(cache_time_)) {}
       ~SyncThread() override { stop(); }
 
     private:
       void run(const std::stop_token &st) override {
         while (!needs_stop()) {
           std::unique_lock lk(impl_ptr->metadata_mutex);
-          if (cv.wait_for(lk, st, std::chrono::minutes(5),
+          if (cv.wait_for(lk, st, cache_time,
                           [&st]() { return st.stop_requested(); })) {
             return;
           }
@@ -232,6 +232,7 @@ namespace raid_fs {
     private:
       std::condition_variable_any cv;
       RAIDFileSystem *impl_ptr;
+      std::chrono::seconds cache_time;
     };
 
   private:
