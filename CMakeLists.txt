@@ -5,8 +5,8 @@ project(RAID_FS CXX)
 set(CMAKE_CXX_STANDARD 23)
 include(cmake/all.cmake)
 
-option(USE_ASAN "Build with asan" ON)
-option(USE_UBSAN "Build with ubsan" ON)
+option(USE_ASAN "Build with asan" OFF)
+option(USE_UBSAN "Build with ubsan" OFF)
 
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
