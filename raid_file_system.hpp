@@ -337,8 +337,6 @@ namespace raid_fs {
       }
       root_inode_no = inode_opt.value();
       assert(root_inode_no == 0);
-      auto inode = get_inode(root_inode_no);
-      assert(inode.type == file_type::directory);
     }
 
     std::optional<uint64_t>

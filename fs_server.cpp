@@ -4,7 +4,6 @@
  * \brief Implementation of a file system
  */
 
-#include <grpc/grpc.h>
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
@@ -106,7 +105,7 @@ int main(int argc, char **argv) {
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
-  std::cout << "Server listening on " << server_address << std::endl;
+  LOG_INFO("Server listening on {}",server_address);
   server->Wait();
   return 0;
 }
