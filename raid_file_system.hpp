@@ -206,7 +206,7 @@ namespace raid_fs {
 
     private:
       void run(const std::stop_token &st) override {
-        while (true) {
+        while (!needs_stop()) {
           std::unique_lock lk(impl_ptr->metadata_mutex);
           if (cv.wait_for(lk, st, std::chrono::minutes(5),
                           [&st]() { return st.stop_requested(); })) {
@@ -218,6 +218,7 @@ namespace raid_fs {
           // release unused mutex
           while (impl_ptr->inode_mutexes.size() > 0 && !needs_stop()) {
             auto [k, v] = impl_ptr->inode_mutexes.pop_oldest();
+            // lock the mutex to ensure that we can safely release the mutex
             if (!v->try_lock()) {
               impl_ptr->inode_mutexes.emplace(k, v);
               break;

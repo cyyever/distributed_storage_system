@@ -113,14 +113,18 @@ namespace raid_fs {
                   ::cyy::naive_lib::util::errno_to_str(old_errno));
         return old_errno;
       }
-      if (res != block_size) {
+      if (static_cast<uint64_t>(res) != block_size) {
         throw std::runtime_error(fmt::format(
             "read disk block {} with unmatched size:{}", block_no, res));
       }
       return {};
     }
 
-    virtual ~Disk() { close(fd); }
+    virtual ~Disk() {
+      if (fd >= 0) {
+        close(fd);
+      }
+    }
 
   private:
     int fd{-1};
