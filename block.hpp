@@ -22,6 +22,9 @@ namespace raid_fs {
     uint64_t next_inode_offset;
     uint64_t data_table_offset;
     uint64_t data_block_number;
+    uint64_t get_data_bitmap_byte_offset() const {
+      return bitmap_byte_offset + inode_number / 8;
+    }
   };
   static_assert(sizeof(SuperBlock) == 64);
   enum class file_type : uint8_t {

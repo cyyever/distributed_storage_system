@@ -32,7 +32,7 @@ namespace raid_fs {
           block_number(raid_controller_ptr->get_capacity() / fs_cfg.block_size),
           block_cache(fs_cfg.block_pool_size, fs_cfg.block_size,
                       raid_controller_ptr),
-          sync_thread(this,std::chrono::seconds(fs_cfg.block_cache_seconds)) {
+          sync_thread(this, std::chrono::seconds(fs_cfg.block_cache_seconds)) {
       raid_fs::Block::block_size = fs_cfg.block_size;
       if (block_size % sizeof(INode) != 0) {
         throw std::runtime_error("block size is not a multiple of inodes");
@@ -202,7 +202,8 @@ namespace raid_fs {
   private:
     class SyncThread final : public cyy::naive_lib::runnable {
     public:
-      SyncThread(RAIDFileSystem *impl_ptr_, std::chrono::seconds  cache_time_) : impl_ptr(impl_ptr_),cache_time(std::move(cache_time_)) {}
+      SyncThread(RAIDFileSystem *impl_ptr_, std::chrono::seconds cache_time_)
+          : impl_ptr(impl_ptr_), cache_time(std::move(cache_time_)) {}
       ~SyncThread() override { stop(); }
 
     private:
@@ -224,6 +225,7 @@ namespace raid_fs {
               impl_ptr->inode_mutexes.emplace(k, v);
               break;
             }
+            LOG_DEBUG("release mutex for {}",k);
             v->unlock();
           }
         }
@@ -305,8 +307,7 @@ namespace raid_fs {
         }
         blk.inode_number = (blk.inode_number + 7) / 8 * 8;
         assert(blk.inode_number % 8 == 0 && blk.inode_number > 0);
-        auto data_bitmap_byte_offset =
-            blk.bitmap_byte_offset + blk.inode_number / 8;
+        auto data_bitmap_byte_offset = blk.get_data_bitmap_byte_offset();
         auto max_recordable_block_number =
             (block_size - data_bitmap_byte_offset % block_size) * 8;
         blk.inode_table_offset = data_bitmap_byte_offset / block_size + 1;
@@ -412,7 +413,7 @@ namespace raid_fs {
 
     bool release_data_block(uint64_t block_no) {
       const auto blk = get_super_block();
-      return release_block(blk.bitmap_byte_offset + blk.inode_number / 8,
+      return release_block(blk.get_data_bitmap_byte_offset(),
                            block_no - blk.data_table_offset);
     }
 
