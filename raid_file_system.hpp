@@ -33,6 +33,7 @@ namespace raid_fs {
           block_cache(fs_cfg.block_pool_size, fs_cfg.block_size,
                       raid_controller_ptr),
           sync_thread(this) {
+      raid_fs::Block::block_size = fs_cfg.block_size;
       if (block_size % sizeof(INode) != 0) {
         throw std::runtime_error("block size is not a multiple of inodes");
       }
@@ -79,21 +80,21 @@ namespace raid_fs {
 
       std::optional<uint64_t> p_inode_no_opt;
       std::optional<Error> error_opt;
-      iterate_dir_entries(*parent_inode_ptr,
-                          [&](size_t entry_cnt, DirEntry &entry) {
-                            if (strcmp(entry.name, p.filename().string().c_str()) == 0) {
-                              if (entry.type != file_type::file) {
-                                error_opt = Error::ERROR_PATH_IS_DIR;
-                              } else {
-                                p_inode_no_opt = entry.inode_no;
-                                entry.inode_no = first_dir_entry_ptr->inode_no;
-                                first_dir_entry_ptr->inode_no = entry_cnt;
-                                entry.type = file_type::free_dir_entry;
-                              }
-                              return std::pair<bool, bool>{true, false};
-                            }
-                            return std::pair<bool, bool>{false, false};
-                          });
+      iterate_dir_entries(
+          *parent_inode_ptr, [&](size_t entry_cnt, DirEntry &entry) {
+            if (strcmp(entry.name, p.filename().string().c_str()) == 0) {
+              if (entry.type != file_type::file) {
+                error_opt = Error::ERROR_PATH_IS_DIR;
+              } else {
+                p_inode_no_opt = entry.inode_no;
+                entry.inode_no = first_dir_entry_ptr->inode_no;
+                first_dir_entry_ptr->inode_no = entry_cnt;
+                entry.type = file_type::free_dir_entry;
+              }
+              return std::pair<bool, bool>{true, false};
+            }
+            return std::pair<bool, bool>{false, false};
+          });
       if (error_opt) {
         return error_opt;
       }
@@ -126,21 +127,21 @@ namespace raid_fs {
 
       std::optional<Error> error_opt;
       std::optional<DirEntry> p_entry_opt;
-      iterate_dir_entries(*parent_inode_ptr,
-                          [&](size_t entry_cnt, DirEntry &entry) {
-                            if (strcmp(entry.name, p.filename().string().c_str()) == 0) {
-                              if (entry.type != file_type::directory) {
-                                error_opt = Error::ERROR_PATH_IS_FILE;
-                              } else {
-                                p_entry_opt = entry;
-                                entry.inode_no = first_dir_entry_ptr->inode_no;
-                                first_dir_entry_ptr->inode_no = entry_cnt;
-                                entry.type = file_type::free_dir_entry;
-                              }
-                              return std::pair<bool, bool>{true, false};
-                            }
-                            return std::pair<bool, bool>{false, false};
-                          });
+      iterate_dir_entries(
+          *parent_inode_ptr, [&](size_t entry_cnt, DirEntry &entry) {
+            if (strcmp(entry.name, p.filename().string().c_str()) == 0) {
+              if (entry.type != file_type::directory) {
+                error_opt = Error::ERROR_PATH_IS_FILE;
+              } else {
+                p_entry_opt = entry;
+                entry.inode_no = first_dir_entry_ptr->inode_no;
+                first_dir_entry_ptr->inode_no = entry_cnt;
+                entry.type = file_type::free_dir_entry;
+              }
+              return std::pair<bool, bool>{true, false};
+            }
+            return std::pair<bool, bool>{false, false};
+          });
       if (error_opt) {
         return error_opt;
       }
@@ -542,7 +543,7 @@ namespace raid_fs {
                 for (size_t j = 0; j < 8; j++, block_no++, mask >>= 1) {
                   if ((mask & new_byte) == zero_byte) {
                     new_byte |= mask;
-                    view[i] = std::to_integer<unsigned char>(new_byte);
+                    view[i] = std::to_integer<char>(new_byte);
                     res = block_no;
                     return std::pair<bool, bool>{true, true};
                   }
@@ -756,6 +757,9 @@ namespace raid_fs {
                   save = true;
                 }
                 if (res.second) {
+                  finish = true;
+                }
+                if (finish) {
                   return {save, true};
                 }
               }

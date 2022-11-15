@@ -9,12 +9,10 @@ import "error.proto";
 
 message BlockReadRequest {
   uint64 block_no = 1;
-  /* optional uint64 block_cnt = 2; */
 }
 
 message BlockReadOKReply {
   bytes block = 1;
-  /* repeated bytes blocks = 2; */
 }
 
 message BlockReadReply {

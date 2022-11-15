@@ -16,7 +16,7 @@
 namespace raid_fs {
   struct Config {
     explicit Config(const std::filesystem::path &config_file) {
-        yaml_node = YAML::LoadFile(config_file.string());
+      yaml_node = YAML::LoadFile(config_file.string());
       disk_capacity = parse_size(yaml_node, "disk_capacity");
       debug_log = yaml_node["debug_log"].as<bool>();
     }
@@ -54,7 +54,7 @@ namespace raid_fs {
   struct FileSystemConfig : public Config {
     explicit FileSystemConfig(const std::filesystem::path &config_file)
         : Config(config_file) {
-      auto sub_yaml_node=yaml_node["filesystem"];
+      auto sub_yaml_node = yaml_node["filesystem"];
       port = sub_yaml_node["port"].as<uint16_t>();
       block_size = parse_size(sub_yaml_node, "block_size");
       if (disk_capacity % block_size != 0) {
@@ -69,7 +69,7 @@ namespace raid_fs {
   struct RAIDConfig : public Config {
     explicit RAIDConfig(const std::filesystem::path &config_file)
         : Config(config_file) {
-      auto sub_yaml_node=yaml_node["RAID"];
+      auto sub_yaml_node = yaml_node["RAID"];
       auto port = sub_yaml_node["first_node_port"].as<uint16_t>();
       auto node_number = sub_yaml_node["node_number"].as<size_t>();
       for (size_t i = 0; i < node_number; i++) {

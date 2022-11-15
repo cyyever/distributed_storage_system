@@ -96,7 +96,6 @@ int main(int argc, char **argv) {
   if (cfg.debug_log) {
     cyy::naive_lib::log::set_level(spdlog::level::level_enum::debug);
   }
-  raid_fs::Block::block_size = cfg.block_size;
   std::string server_address(fmt::format("0.0.0.0:{}", cfg.port));
 
   raid_fs::FileSystemServiceImpl service(cfg, get_RAID_controller(raid_cfg));
@@ -105,7 +104,7 @@ int main(int argc, char **argv) {
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
-  LOG_INFO("Server listening on {}",server_address);
+  LOG_INFO("Server listening on {}", server_address);
   server->Wait();
   return 0;
 }

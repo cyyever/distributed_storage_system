@@ -9,7 +9,7 @@
 #include "../config.hpp"
 #include "../raid_file_system.hpp"
 
-::raid_fs::RAIDFileSystem &get_file_system_impl() {
+inline ::raid_fs::RAIDFileSystem &get_file_system_impl() {
   static std::unique_ptr<::raid_fs::RAIDFileSystem> fs_ptr;
   if (!fs_ptr) {
     auto config_path =
