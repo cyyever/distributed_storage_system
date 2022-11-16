@@ -88,9 +88,10 @@ namespace raid_fs {
 
       std::optional<uint64_t> p_inode_no_opt;
       std::optional<Error> error_opt;
+      auto basename=p.filename();
       iterate_dir_entries(
           *parent_inode_ptr, [&](size_t entry_cnt, DirEntry &entry) {
-            if (strcmp(entry.name, p.filename().string().c_str()) == 0) {
+          if (basename.compare(entry.name)==0) {
               if (entry.type != file_type::file) {
                 error_opt = Error::ERROR_PATH_IS_DIR;
               } else {
@@ -135,9 +136,10 @@ namespace raid_fs {
 
       std::optional<Error> error_opt;
       std::optional<DirEntry> p_entry_opt;
+      auto basename=p.filename();
       iterate_dir_entries(
           *parent_inode_ptr, [&](size_t entry_cnt, DirEntry &entry) {
-            if (strcmp(entry.name, p.filename().string().c_str()) == 0) {
+          if (basename.compare(entry.name)==0) {
               if (entry.type != file_type::directory) {
                 error_opt = Error::ERROR_PATH_IS_FILE;
               } else {
@@ -852,17 +854,18 @@ namespace raid_fs {
           get_mutable_inode(std::get<0>(parent_res.value()));
       uint64_t p_inode_no = 0;
       Error error = ERROR_UNSPECIFIED;
-      iterate_dir_entries(*parent_inode_ptr, [&](size_t, const DirEntry &dir) {
-        if (strcmp(dir.name, p.filename().string().c_str()) == 0) {
-          if (path_is_dir && dir.type != file_type::directory) {
+      auto basename=p.filename();
+      iterate_dir_entries(*parent_inode_ptr, [&](size_t, const DirEntry &entry) {
+        if (basename.compare(entry.name)==0) {
+          if (path_is_dir && entry.type != file_type::directory) {
             error = ERROR_PATH_COMPONENT_IS_FILE;
             return std::pair<bool, bool>{false, true};
           }
-          if (!path_is_dir && dir.type != file_type::file) {
+          if (!path_is_dir && entry.type != file_type::file) {
             error = ERROR_PATH_IS_DIR;
             return std::pair<bool, bool>{false, true};
           }
-          p_inode_no = dir.inode_no;
+          p_inode_no = entry.inode_no;
           return std::pair<bool, bool>{false, true};
         }
         return std::pair<bool, bool>{false, false};
