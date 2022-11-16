@@ -164,6 +164,37 @@ TEST_CASE("file_system") {
     REQUIRE(std::ranges::all_of(reply.ok().data(),
                                 [](auto const c) { return c == '1'; }));
   }
+  SUBCASE("write large file") {
+    uint64_t fd{};
+
+    {
+      ::grpc::ClientContext context;
+      raid_fs::OpenRequest request;
+      request.set_path("/foo/bar");
+      request.set_o_create(false);
+      request.set_o_excl(false);
+      raid_fs::OpenReply reply;
+      auto grpc_status = stub->Open(&context, request, &reply);
+      REQUIRE(grpc_status.ok());
+      REQUIRE(reply.has_ok());
+      REQUIRE(reply.ok().file_size() == 0);
+      fd = reply.ok().fd();
+    }
+
+    ::grpc::ClientContext context;
+    raid_fs::WriteRequest request;
+    request.set_fd(fd);
+    uint64_t offset = 4*config.block_size ;
+    request.set_offset(offset);
+    uint64_t written_size = 1024 * config.block_size;
+    request.set_data(::raid_fs::block_data_type(written_size, '1'));
+    raid_fs::WriteReply reply;
+    auto grpc_status = stub->Write(&context, request, &reply);
+    REQUIRE(grpc_status.ok());
+    REQUIRE(reply.has_ok());
+    REQUIRE_EQ(reply.ok().written_size(), written_size);
+    REQUIRE(reply.ok().file_size() == offset + written_size);
+  }
 
   SUBCASE("remove file") {
     {

@@ -33,7 +33,6 @@ namespace raid_fs {
           block_cache(fs_cfg.block_pool_size, fs_cfg.block_size,
                       raid_controller_ptr),
           sync_thread(this, std::chrono::seconds(fs_cfg.block_cache_seconds)) {
-      raid_fs::Block::block_size = fs_cfg.block_size;
       if (block_size % sizeof(INode) != 0) {
         throw std::runtime_error("block size is not a multiple of inodes");
       }
@@ -42,10 +41,17 @@ namespace raid_fs {
         throw std::runtime_error(
             "block size is not a multiple of directory entries");
       }
+      raid_fs::Block::block_size = block_size;
 
       // file system is not initialized
       if (std::string(get_super_block().fs_type) != raid_fs_type) {
         make_filesystem();
+      } else {
+        if (get_super_block().block_size != block_size) {
+          throw std::runtime_error(fmt::format(
+              "block size is not match with the recorded block size:{} {}",
+              get_super_block().block_size, block_size));
+        }
       }
       sync_thread.start("sync thread");
     }
@@ -299,6 +305,7 @@ namespace raid_fs {
         auto &blk = block_ref->as_super_block();
         strcpy(blk.fs_type, raid_fs_type);
         blk.fs_version = 0;
+        blk.block_size = block_size;
         blk.bitmap_byte_offset = sizeof(SuperBlock);
         blk.next_inode_offset = 0;
         blk.inode_number = static_cast<uint64_t>(block_number * 0.01);
@@ -374,15 +381,55 @@ namespace raid_fs {
     }
 
     void release_file_metadata(uint64_t inode_no) {
-      std::unique_lock lk(metadata_mutex);
       auto inode = get_inode(inode_no);
-      for (auto block_no : inode.block_ptrs) {
-        if(block_no!=0) {
-          auto res=release_data_block(block_no);
-          if(!res) {
-            std::runtime_error(fmt::format("block {} is not allocated",block_no));
+      size_t i = 0;
+      while (i < INode::get_direct_block_pointer_number()) {
+        auto direct_block_pointer = inode.block_ptrs[i];
+        i++;
+        if (direct_block_pointer == 0) {
+          continue;
+        }
+        release_data_block(direct_block_pointer);
+      }
+      auto release_indirect_block = [=, this](uint64_t indirect_block_pointer) {
+        auto indirect_block = get_block(indirect_block_pointer);
+        for (size_t j = 0; j < block_size / sizeof(uint64_t); j++) {
+          auto block_ptr =
+              *(reinterpret_cast<uint64_t *>(indirect_block->data.data()) + j);
+          if (block_ptr != 0) {
+            release_data_block(block_ptr);
           }
         }
+      };
+      while (i < INode::get_direct_block_pointer_number() +
+                     INode::get_indirect_block_pointer_number()) {
+        auto indirect_block_pointer = inode.block_ptrs[i];
+        i++;
+        if (indirect_block_pointer == 0) {
+          continue;
+        }
+        release_indirect_block(indirect_block_pointer);
+        release_data_block(indirect_block_pointer);
+      }
+      while (i < INode::get_direct_block_pointer_number() +
+                     INode::get_indirect_block_pointer_number() +
+                     INode::get_double_indirect_block_pointer_number()) {
+        auto double_indirect_block_pointer = inode.block_ptrs[i];
+        i++;
+        if (double_indirect_block_pointer == 0) {
+          continue;
+        }
+        auto double_indirect_block = get_block(double_indirect_block_pointer);
+        for (size_t j = 0; j < block_size / sizeof(uint64_t); j++) {
+          auto indirect_block_pointer = *(
+              reinterpret_cast<uint64_t *>(double_indirect_block->data.data()) +
+              j);
+          if (indirect_block_pointer == 0) {
+            continue;
+          }
+          release_indirect_block(indirect_block_pointer);
+        }
+        release_data_block(double_indirect_block_pointer);
       }
       release_inode(inode_no);
     }
@@ -409,23 +456,31 @@ namespace raid_fs {
       return res;
     }
 
-    bool release_inode(uint64_t inode_no) {
+    void release_inode(uint64_t inode_no) {
+      std::unique_lock lk(metadata_mutex);
       const auto blk = get_super_block();
-      return release_block(blk.bitmap_byte_offset, inode_no);
+      auto res = release_block(blk.bitmap_byte_offset, inode_no);
+      if (!res) {
+        throw std::runtime_error(
+            fmt::format("failed to release inode {}", inode_no));
+      }
     }
 
-    bool release_data_block(uint64_t block_no) {
-      if(block_no==0) {
-        throw std::runtime_error("release block 0");
-      }
+    void release_data_block(uint64_t block_no) {
+      std::unique_lock lk(metadata_mutex);
       const auto blk = get_super_block();
-      auto res=release_block(blk.get_data_bitmap_byte_offset(),
-                           block_no - blk.data_table_offset);
-      if(!res) {
-        return false;
+      if (block_no < blk.data_table_offset) {
+        throw std::runtime_error(
+            fmt::format("invalid block to release:{}", block_no));
+      }
+      auto res = release_block(blk.get_data_bitmap_byte_offset(),
+                               block_no - blk.data_table_offset);
+      if (!res) {
+        throw std::runtime_error(
+            fmt::format("invalid block to release:{}", block_no));
       }
       block_cache.erase(block_no);
-      return true;
+      return;
     }
 
     uint64_t write_data(INode &inode, uint64_t offset,
@@ -470,8 +525,8 @@ namespace raid_fs {
       return written_bytes;
     }
 
-    block_data_type read_data(INode &inode, uint64_t offset, uint64_t length,
-                              bool check_res = false) {
+    block_data_type read_data(const INode &inode, uint64_t offset,
+                              uint64_t length, bool check_res = false) {
       block_data_type data;
       auto old_length = length;
       while (offset < inode.size) {
@@ -490,35 +545,140 @@ namespace raid_fs {
       return data;
     }
 
+    std::optional<uint64_t> get_data_block_no_of_file(INode &inode,
+                                                      uint64_t offset,
+                                                      bool allocate = false) {
+
+      auto allocate_data_block = [=, this](uint64_t &block_ptr) {
+        if (!allocate || block_ptr != 0) {
+          return block_ptr;
+        }
+        std::unique_lock lk(metadata_mutex);
+        const auto super_block = get_super_block();
+        auto relative_data_block_no_opt =
+            allocate_block(super_block.get_data_bitmap_byte_offset(),
+                           super_block.data_block_number / 8);
+        if (relative_data_block_no_opt.has_value()) {
+          block_ptr = super_block.data_table_offset +
+                      relative_data_block_no_opt.value();
+        }
+        return block_ptr;
+      };
+
+      const auto direct_extent =
+          INode::get_direct_block_pointer_number() * block_size;
+      if (offset < direct_extent) {
+        auto block_ptr =
+            allocate_data_block(inode.block_ptrs[offset / block_size]);
+        if (block_ptr == 0) {
+          if (!allocate) {
+            LOG_ERROR("unallocated block");
+          }
+          return {};
+        }
+        return block_ptr;
+      }
+      offset -= direct_extent;
+      const auto number_of_ptr_per_block =
+          block_size / sizeof(inode.block_ptrs[0]);
+
+      const auto indirect_block_extent = number_of_ptr_per_block * block_size;
+      const auto indirect_extent =
+          INode::get_indirect_block_pointer_number() * indirect_block_extent;
+      if (offset < indirect_extent) {
+        auto indirect_block_ptr = allocate_data_block(
+            inode.block_ptrs[INode::get_direct_block_pointer_number() +
+                             offset / indirect_block_extent]);
+        if (indirect_block_ptr == 0) {
+          if (!allocate) {
+            LOG_ERROR("unallocated indirect block");
+          }
+          return {};
+        }
+        offset %= indirect_block_extent;
+        auto indirect_block = get_mutable_block(indirect_block_ptr);
+        if (!allocate) {
+          indirect_block.cancel_writeback();
+        }
+        auto block_ptr = allocate_data_block(reinterpret_cast<uint64_t *>(
+            indirect_block->data.data())[offset / block_size]);
+        if (block_ptr == 0) {
+          if (!allocate) {
+            LOG_ERROR("unallocated block");
+          }
+          return {};
+        }
+        return block_ptr;
+      }
+      offset -= indirect_extent;
+      const auto double_indirect_block_extent =
+          number_of_ptr_per_block * number_of_ptr_per_block * block_size;
+      const auto double_indirect_extent =
+          INode::get_double_indirect_block_pointer_number() *
+          double_indirect_block_extent;
+      if (offset >= double_indirect_extent) {
+        throw std::runtime_error("offset is more than file size limit");
+      }
+      auto double_indirect_block_ptr = allocate_data_block(
+          inode.block_ptrs[INode::get_direct_block_pointer_number() +
+                           INode::get_indirect_block_pointer_number() +
+                           offset / double_indirect_block_extent]);
+      if (double_indirect_block_ptr == 0) {
+        if (!allocate) {
+          LOG_ERROR("unallocated double indirect block");
+        }
+        return {};
+      }
+      offset %= double_indirect_block_extent;
+      auto double_indirect_block = get_mutable_block(double_indirect_block_ptr);
+      if (!allocate) {
+        double_indirect_block.cancel_writeback();
+      }
+      auto indirect_block_ptr =
+          allocate_data_block(reinterpret_cast<uint64_t *>(
+              double_indirect_block->data
+                  .data())[offset / indirect_block_extent]);
+      if (indirect_block_ptr == 0) {
+        if (!allocate) {
+          LOG_ERROR("unallocated indirect block");
+        }
+        return {};
+      }
+      auto indirect_block = get_mutable_block(indirect_block_ptr);
+      if (!allocate) {
+        indirect_block.cancel_writeback();
+      }
+      offset %= indirect_block_extent;
+      auto block_ptr = allocate_data_block(reinterpret_cast<uint64_t *>(
+          indirect_block->data.data())[offset / block_size]);
+      if (block_ptr == 0) {
+        if (!allocate) {
+          LOG_ERROR("unallocated block");
+        }
+        return {};
+      }
+      return block_ptr;
+    }
+
     const block_ptr_type get_data_block_of_file(const INode &inode,
                                                 uint64_t offset) {
-      auto block_ptr = inode.block_ptrs[offset / block_size];
-      if (block_ptr == 0) {
-        throw std::runtime_error("invalid block");
+      auto block_no_opt =
+          get_data_block_no_of_file(const_cast<INode &>(inode), offset);
+      if (!block_no_opt.has_value()) {
+        throw std::runtime_error(
+            fmt::format("unallocated block for offset {}", offset));
       }
-      return get_block(block_ptr);
+      return get_block(block_no_opt.value());
     }
 
     std::optional<BlockCache::value_reference>
     get_mutable_data_block_of_file(INode &inode, uint64_t offset) {
-
-      auto block_ptr = inode.block_ptrs[offset / block_size];
-      if (block_ptr != 0) {
-        return get_mutable_block(block_ptr);
-      }
-      std::unique_lock lk(metadata_mutex);
-      const auto super_block = get_super_block();
-      auto data_block_no_opt =
-          allocate_block(super_block.get_data_bitmap_byte_offset(),
-                         super_block.data_block_number / 8);
-      lk.unlock();
-      if (!data_block_no_opt.has_value()) {
+      auto block_no_opt =
+          get_data_block_no_of_file(const_cast<INode &>(inode), offset, true);
+      if (!block_no_opt.value()) {
         return {};
       }
-      auto data_block_ref = get_mutable_block(super_block.data_table_offset +
-                                              data_block_no_opt.value());
-      inode.block_ptrs[offset / block_size] = data_block_ref.get_key();
-      return data_block_ref;
+      return get_mutable_block(block_no_opt.value());
     }
 
     bool release_block(uint64_t bitmap_byte_offset,
