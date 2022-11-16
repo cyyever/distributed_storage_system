@@ -225,7 +225,7 @@ namespace raid_fs {
               impl_ptr->inode_mutexes.emplace(k, v);
               break;
             }
-            LOG_DEBUG("release mutex for {}",k);
+            LOG_DEBUG("release mutex for {}", k);
             v->unlock();
           }
         }
@@ -377,8 +377,11 @@ namespace raid_fs {
       std::unique_lock lk(metadata_mutex);
       auto inode = get_inode(inode_no);
       for (auto block_no : inode.block_ptrs) {
-        if (block_no != 0) {
-          release_data_block(block_no);
+        if(block_no!=0) {
+          auto res=release_data_block(block_no);
+          if(!res) {
+            std::runtime_error(fmt::format("block {} is not allocated",block_no));
+          }
         }
       }
       release_inode(inode_no);
@@ -412,9 +415,17 @@ namespace raid_fs {
     }
 
     bool release_data_block(uint64_t block_no) {
+      if(block_no==0) {
+        throw std::runtime_error("release block 0");
+      }
       const auto blk = get_super_block();
-      return release_block(blk.get_data_bitmap_byte_offset(),
+      auto res=release_block(blk.get_data_bitmap_byte_offset(),
                            block_no - blk.data_table_offset);
+      if(!res) {
+        return false;
+      }
+      block_cache.erase(block_no);
+      return true;
     }
 
     uint64_t write_data(INode &inode, uint64_t offset,
@@ -495,11 +506,12 @@ namespace raid_fs {
       if (block_ptr != 0) {
         return get_mutable_block(block_ptr);
       }
-
+      std::unique_lock lk(metadata_mutex);
       const auto super_block = get_super_block();
-      auto data_block_no_opt = allocate_block(
-          super_block.bitmap_byte_offset + super_block.inode_number / 8,
-          super_block.data_block_number / 8);
+      auto data_block_no_opt =
+          allocate_block(super_block.get_data_bitmap_byte_offset(),
+                         super_block.data_block_number / 8);
+      lk.unlock();
       if (!data_block_no_opt.has_value()) {
         return {};
       }
@@ -538,7 +550,7 @@ namespace raid_fs {
                                      size_t byte_offset) {
             std::byte zero_byte{0b00000000};
             for (size_t i = 0; i < view.size(); i++) {
-              if ((unsigned char)(view[i]) < 255) {
+              if (static_cast<unsigned char>(view[i]) < 255) {
                 uint64_t block_no = (byte_offset + i - bitmap_byte_offset) * 8;
                 std::byte mask{0b10000000};
                 auto new_byte = std::byte(view[i]);
