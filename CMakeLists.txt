@@ -69,7 +69,7 @@ endif()
 
 add_subdirectory(test)
 
-option(BUILD_FUZZING "Build fuzzing" ON)
+option(BUILD_FUZZING "Build fuzzing" OFF)
 if(BUILD_FUZZING)
   add_subdirectory(fuzz_test)
 endif()
