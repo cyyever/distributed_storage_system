@@ -101,6 +101,7 @@ int main(int argc, char **argv) {
   raid_fs::FileSystemServiceImpl service(cfg, get_RAID_controller(raid_cfg));
 
   grpc::ServerBuilder builder;
+  builder.SetMaxMessageSize(std::numeric_limits<int>::max());
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());

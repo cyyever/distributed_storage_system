@@ -177,14 +177,13 @@ TEST_CASE("file_system") {
       auto grpc_status = stub->Open(&context, request, &reply);
       REQUIRE(grpc_status.ok());
       REQUIRE(reply.has_ok());
-      REQUIRE(reply.ok().file_size() == 0);
       fd = reply.ok().fd();
     }
 
     ::grpc::ClientContext context;
     raid_fs::WriteRequest request;
     request.set_fd(fd);
-    uint64_t offset = 4*config.block_size ;
+    uint64_t offset = 4 * config.block_size;
     request.set_offset(offset);
     uint64_t written_size = 1024 * config.block_size;
     request.set_data(::raid_fs::block_data_type(written_size, '1'));
