@@ -6,6 +6,7 @@
 
 #pragma once
 #include <algorithm>
+#include <bit>
 #include <functional>
 #include <ranges>
 #include <shared_mutex>
@@ -57,6 +58,7 @@ namespace raid_fs {
     }
 
     ~RAIDFileSystem() { sync_thread.stop(); }
+
     std::expected<std::pair<uint64_t, INode>, Error>
     open(const std::string &path, bool o_create, bool o_excl) {
       auto res = travel_path(path, o_create, o_excl);
@@ -203,6 +205,32 @@ namespace raid_fs {
       }
       auto written_bytes = write_data(*inode_ptr, offset, data_view);
       return std::pair<uint64_t, INode>{written_bytes, *inode_ptr};
+    }
+
+    std::tuple<SuperBlock, size_t, size_t> get_file_system_info() {
+      std::unique_lock metadata_lock(metadata_mutex);
+      auto const super_block = get_super_block();
+      size_t used_inode_number = 0;
+      iterate_bytes(super_block.bitmap_byte_offset,
+                    super_block.inode_number / 8,
+                    [&used_inode_number](auto view, auto) {
+                      for (auto const &byte : view) {
+                        used_inode_number +=
+                            std::popcount(static_cast<unsigned char>(byte));
+                      }
+                      return std::pair<bool, bool>{false, false};
+                    });
+      size_t used_data_block_number = 0;
+      iterate_bytes(super_block.get_data_bitmap_byte_offset(),
+                    super_block.data_block_number / 8,
+                    [&used_data_block_number](auto view, auto) {
+                      for (auto const &byte : view) {
+                        used_data_block_number +=
+                            std::popcount(static_cast<unsigned char>(byte));
+                      }
+                      return std::pair<bool, bool>{false, false};
+                    });
+      return {super_block, used_inode_number, used_data_block_number};
     }
 
   private:

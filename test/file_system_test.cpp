@@ -25,6 +25,17 @@ TEST_CASE("file_system") {
   auto channel = grpc::CreateChannel(fmt::format("localhost:{}", config.port),
                                      ::grpc::InsecureChannelCredentials());
   auto stub = ::raid_fs::FileSystem::NewStub(channel);
+
+  SUBCASE("get file system info") {
+    ::grpc::ClientContext context;
+    ::google::protobuf::Empty request;
+    raid_fs::FileSystemInfoReply reply;
+    auto grpc_status = stub->GetFileSystemInfo(&context, request, &reply);
+    REQUIRE(grpc_status.ok());
+    REQUIRE(!reply.has_error());
+    LOG_INFO("file number {}", reply.ok().file_number());
+    LOG_INFO("used data block number {}", reply.ok().used_data_block_number());
+  }
   SUBCASE("open /") {
     ::grpc::ClientContext context;
     raid_fs::OpenRequest request;
@@ -234,5 +245,15 @@ TEST_CASE("file_system") {
     auto grpc_status = stub->RemoveDir(&context, request, &reply);
     REQUIRE(grpc_status.ok());
     REQUIRE(!reply.has_error());
+  }
+  SUBCASE("get file system info again") {
+    ::grpc::ClientContext context;
+    ::google::protobuf::Empty request;
+    raid_fs::FileSystemInfoReply reply;
+    auto grpc_status = stub->GetFileSystemInfo(&context, request, &reply);
+    REQUIRE(grpc_status.ok());
+    REQUIRE(!reply.has_error());
+    LOG_INFO("file number {}", reply.ok().file_number());
+    LOG_INFO("used data block number {}", reply.ok().used_data_block_number());
   }
 }

@@ -80,6 +80,21 @@ namespace raid_fs {
       }
       return ::grpc::Status::OK;
     }
+    ::grpc::Status GetFileSystemInfo(::grpc::ServerContext *context,
+                                     const ::google::protobuf::Empty *request,
+                                     ::raid_fs::FileSystemInfoReply *response) {
+      auto [super_block, used_inode_number, used_data_block_number] =
+          raid_fs.get_file_system_info();
+      response->mutable_ok()->set_file_system_type(super_block.fs_type);
+      response->mutable_ok()->set_file_system_version(super_block.fs_version);
+      response->mutable_ok()->set_block_size(super_block.block_size);
+      response->mutable_ok()->set_file_number(used_inode_number);
+      response->mutable_ok()->set_used_data_block_number(
+          used_data_block_number);
+      response->mutable_ok()->set_free_data_block_number(
+          super_block.data_block_number - used_data_block_number);
+      return ::grpc::Status::OK;
+    }
 
   private:
     RAIDFileSystem raid_fs;

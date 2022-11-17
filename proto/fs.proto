@@ -2,14 +2,15 @@ syntax = "proto3";
 package raid_fs;
 
 import "error.proto";
+import "google/protobuf/empty.proto";
 
 /*
-   We mimic POSIX filesystem API for the distributed storage system.
+   We mimic POSIX file system API for the distributed storage system.
    However, we discard unsuitable abstractions for distributed systems
    such as special file types and file permission.
    For simplicity, paths consist of English letters and digits
    separated by '/' , where each path component has a max length of 127 chars.
-   Also paths are case-sensitive, relative paths like '.' and '..' are not supported.
+   Paths are case-sensitive, relative paths like '.' and '..' are not supported.
 */
 
 message OpenRequest {
@@ -81,6 +82,22 @@ message RemoveDirReply {
   optional Error error = 1;
 }
 
+message FileSystemInfoOKReply {
+  string file_system_type = 1;
+  uint64 file_system_version = 2;
+  uint64 block_size = 3;
+  uint64 file_number = 4;
+  uint64 used_data_block_number = 5;
+  uint64 free_data_block_number = 6;
+}
+
+message FileSystemInfoReply {
+  oneof test_oneof {
+    Error error = 1;
+    FileSystemInfoOKReply ok = 2;
+  }
+}
+
 service FileSystem {
   /* Open a file and return the fd. */
   /* o_create: If set to True, then create the file and parent directories on the fly. */
@@ -94,4 +111,6 @@ service FileSystem {
   rpc Remove(RemoveRequest) returns (RemoveReply) {}
   /* Delete an empty directory. */
   rpc RemoveDir(RemoveDirRequest) returns (RemoveDirReply) {}
+  /* Get information about the file system. */
+  rpc GetFileSystemInfo(google.protobuf.Empty) returns (FileSystemInfoReply) {}
 }
