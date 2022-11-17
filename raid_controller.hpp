@@ -29,7 +29,7 @@ namespace raid_fs {
     virtual std::expected<std::map<LogicalRange, std::string>, Error>
     read(const std::set<LogicalRange> &data_ranges) = 0;
     virtual std::optional<Error>
-    write(std::map<uint64_t, std::string> data) = 0;
+    write(std::map<uint64_t, std::string> blocks) = 0;
   };
   class RAID6Controller : public RAIDController {
   public:
@@ -97,7 +97,7 @@ namespace raid_fs {
       }
       return results;
     }
-    std::optional<Error> write(std::map<uint64_t, std::string> data) override {
+    std::optional<Error> write(std::map<uint64_t, std::string> blocks) override {
 #if 0
       for (auto &[block_no, block] : blocks) {
         ::grpc::ClientContext context;
