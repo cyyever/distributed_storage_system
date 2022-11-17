@@ -84,6 +84,7 @@ namespace raid_fs {
         uint64_t p = offset;
         auto end_pos = offset + length;
         auto partial_length = std::min(block_size, block_size - p % block_size);
+        assert(partial_length == block_size);
         std::string result(raid_blocks[p / block_size], partial_length);
         p += partial_length;
         length -= partial_length;
@@ -97,16 +98,29 @@ namespace raid_fs {
       }
       return results;
     }
-    std::optional<Error> write(std::map<uint64_t, std::string> blocks) override {
-#if 0
-      for (auto &[block_no, block] : blocks) {
+    std::optional<Error>
+    write(std::map<uint64_t, std::string> blocks) override {
+      std::map<uint64_t, std::string_view> raid_blocks;
+      for (auto const &[offset, block] : blocks) {
+        assert(offset % block_size == 0);
+        assert(block.size() % block_size == 0);
+        for (size_t p = offset; p < offset + block.size(); p += block_size) {
+          raid_blocks.emplace(p,
+                              std::string_view{block.data() + p, block_size});
+        }
+      }
+
+      for (auto &[block_no, block] : raid_blocks) {
+        auto physical_node_no = block_no % data_node_number;
+        auto physical_block_no = block_no / data_node_number;
         ::grpc::ClientContext context;
         BlockWriteRequest request;
-        request.set_block_no(block_no);
-        request.set_block(std::move(block));
+        request.set_block_no(physical_block_no);
+        request.set_block(std::string(block));
         BlockWriteReply reply;
 
-        auto grpc_status = data_stubs[0]->Write(&context, request, &reply);
+        auto grpc_status =
+            data_stubs[physical_node_no]->Write(&context, request, &reply);
         if (!grpc_status.ok()) {
           LOG_ERROR("write block {} failed:{}", block_no,
                     grpc_status.error_message());
@@ -117,7 +131,6 @@ namespace raid_fs {
           return {reply.error()};
         }
       }
-#endif
       return {};
     }
 
