@@ -34,7 +34,8 @@ namespace raid_fs {
   class RAID6Controller : public RAIDController {
   public:
     RAID6Controller(const RAIDConfig &raid_config) {
-      capacity = raid_config.disk_capacity * raid_config.data_ports.size();
+      data_node_number= raid_config.data_ports.size();
+      capacity = raid_config.disk_capacity * data_node_number;
       block_size = raid_config.block_size;
       for (auto port : raid_config.data_ports) {
         auto channel =
@@ -56,13 +57,14 @@ namespace raid_fs {
       auto block_no_set = convert_logical_range_to_raid_blocks(data_ranges);
       std::map<LogicalRange, std::string> results;
 
-      /*
       for (auto block_no : block_no_set) {
 
         ::grpc::ClientContext context;
         BlockReadRequest request;
         request.set_block_no(block_no);
         BlockReadReply reply;
+        auto physical_node_no=block_no%data_node_number;
+        auto physical_block_no=block_no/data_node_number;
 
         auto grpc_status = data_stubs[0]->Read(&context, request, &reply);
         if (!grpc_status.ok()) {
@@ -76,7 +78,6 @@ namespace raid_fs {
         assert(reply.has_ok());
         blocks[block_no] = reply.ok().block();
       }
-      */
       return results;
     }
     std::optional<Error> write(std::map<uint64_t, std::string> data) override {
@@ -119,8 +120,8 @@ namespace raid_fs {
     std::vector<std::unique_ptr<RAIDNode::Stub>> data_stubs;
     std::unique_ptr<RAIDNode::Stub> P_stub;
     std::unique_ptr<RAIDNode::Stub> Q_stub;
-    size_t capacity{};
     size_t data_node_number{};
+    size_t capacity{};
     size_t block_size{};
   };
 
