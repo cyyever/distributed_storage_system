@@ -82,7 +82,8 @@ namespace raid_fs {
         : cyy::algorithm::cache<uint64_t, block_ptr_type>(
               std::make_unique<BlockCacheBackend>(raid_controller_ptr,
                                                   block_size)) {
-      this->set_in_memory_number(capacity);
+      this->set_in_memory_number(capacity / block_size);
+      LOG_DEBUG("cache {} blocks", capacity / block_size);
       this->set_fetch_thread_number(1);
       this->set_saving_thread_number(1);
     }

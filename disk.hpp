@@ -140,6 +140,7 @@ namespace raid_fs {
                                                size_t disk_id = 0) {
 #ifndef _WIN32
     if (raid_config.use_memory_disk) {
+      LOG_WARN("use memory disk");
       return std::make_shared<MemoryDisk>(raid_config.disk_capacity,
                                           raid_config.block_size);
     }

@@ -88,22 +88,22 @@ namespace raid_fs {
 
       std::optional<uint64_t> p_inode_no_opt;
       std::optional<Error> error_opt;
-      auto basename=p.filename();
-      iterate_dir_entries(
-          *parent_inode_ptr, [&](size_t entry_cnt, DirEntry &entry) {
-          if (basename.compare(entry.name)==0) {
-              if (entry.type != file_type::file) {
-                error_opt = Error::ERROR_PATH_IS_DIR;
-              } else {
-                p_inode_no_opt = entry.inode_no;
-                entry.inode_no = first_dir_entry_ptr->inode_no;
-                first_dir_entry_ptr->inode_no = entry_cnt;
-                entry.type = file_type::free_dir_entry;
-              }
-              return std::pair<bool, bool>{true, false};
-            }
-            return std::pair<bool, bool>{false, false};
-          });
+      auto basename = p.filename();
+      iterate_dir_entries(*parent_inode_ptr,
+                          [&](size_t entry_cnt, DirEntry &entry) {
+                            if (basename.compare(entry.name) == 0) {
+                              if (entry.type != file_type::file) {
+                                error_opt = Error::ERROR_PATH_IS_DIR;
+                              } else {
+                                p_inode_no_opt = entry.inode_no;
+                                entry.inode_no = first_dir_entry_ptr->inode_no;
+                                first_dir_entry_ptr->inode_no = entry_cnt;
+                                entry.type = file_type::free_dir_entry;
+                              }
+                              return std::pair<bool, bool>{true, false};
+                            }
+                            return std::pair<bool, bool>{false, false};
+                          });
       if (error_opt) {
         return error_opt;
       }
@@ -136,22 +136,22 @@ namespace raid_fs {
 
       std::optional<Error> error_opt;
       std::optional<DirEntry> p_entry_opt;
-      auto basename=p.filename();
-      iterate_dir_entries(
-          *parent_inode_ptr, [&](size_t entry_cnt, DirEntry &entry) {
-          if (basename.compare(entry.name)==0) {
-              if (entry.type != file_type::directory) {
-                error_opt = Error::ERROR_PATH_IS_FILE;
-              } else {
-                p_entry_opt = entry;
-                entry.inode_no = first_dir_entry_ptr->inode_no;
-                first_dir_entry_ptr->inode_no = entry_cnt;
-                entry.type = file_type::free_dir_entry;
-              }
-              return std::pair<bool, bool>{true, false};
-            }
-            return std::pair<bool, bool>{false, false};
-          });
+      auto basename = p.filename();
+      iterate_dir_entries(*parent_inode_ptr,
+                          [&](size_t entry_cnt, DirEntry &entry) {
+                            if (basename.compare(entry.name) == 0) {
+                              if (entry.type != file_type::directory) {
+                                error_opt = Error::ERROR_PATH_IS_FILE;
+                              } else {
+                                p_entry_opt = entry;
+                                entry.inode_no = first_dir_entry_ptr->inode_no;
+                                first_dir_entry_ptr->inode_no = entry_cnt;
+                                entry.type = file_type::free_dir_entry;
+                              }
+                              return std::pair<bool, bool>{true, false};
+                            }
+                            return std::pair<bool, bool>{false, false};
+                          });
       if (error_opt) {
         return error_opt;
       }
@@ -353,8 +353,8 @@ namespace raid_fs {
           blk.data_block_number = block_number - blk.data_table_offset;
           if (blk.data_block_number > max_recordable_block_number ||
               blk.data_block_number % 8 != 0) {
-            LOG_DEBUG("{} {}", blk.data_block_number,
-                      max_recordable_block_number);
+            /* LOG_DEBUG("{} {}", blk.data_block_number, */
+            /*           max_recordable_block_number); */
             blk.inode_table_offset += 1;
             max_recordable_block_number += block_size * 8;
           } else {
@@ -591,6 +591,7 @@ namespace raid_fs {
         if (relative_data_block_no_opt.has_value()) {
           block_ptr = super_block.data_table_offset +
                       relative_data_block_no_opt.value();
+          block_cache.emplace(block_ptr, std::make_shared<Block>());
         }
         return block_ptr;
       };
@@ -854,22 +855,23 @@ namespace raid_fs {
           get_mutable_inode(std::get<0>(parent_res.value()));
       uint64_t p_inode_no = 0;
       Error error = ERROR_UNSPECIFIED;
-      auto basename=p.filename();
-      iterate_dir_entries(*parent_inode_ptr, [&](size_t, const DirEntry &entry) {
-        if (basename.compare(entry.name)==0) {
-          if (path_is_dir && entry.type != file_type::directory) {
-            error = ERROR_PATH_COMPONENT_IS_FILE;
-            return std::pair<bool, bool>{false, true};
-          }
-          if (!path_is_dir && entry.type != file_type::file) {
-            error = ERROR_PATH_IS_DIR;
-            return std::pair<bool, bool>{false, true};
-          }
-          p_inode_no = entry.inode_no;
-          return std::pair<bool, bool>{false, true};
-        }
-        return std::pair<bool, bool>{false, false};
-      });
+      auto basename = p.filename();
+      iterate_dir_entries(
+          *parent_inode_ptr, [&](size_t, const DirEntry &entry) {
+            if (basename.compare(entry.name) == 0) {
+              if (path_is_dir && entry.type != file_type::directory) {
+                error = ERROR_PATH_COMPONENT_IS_FILE;
+                return std::pair<bool, bool>{false, true};
+              }
+              if (!path_is_dir && entry.type != file_type::file) {
+                error = ERROR_PATH_IS_DIR;
+                return std::pair<bool, bool>{false, true};
+              }
+              p_inode_no = entry.inode_no;
+              return std::pair<bool, bool>{false, true};
+            }
+            return std::pair<bool, bool>{false, false};
+          });
       if (p_inode_no != 0) {
         if (o_create && o_excl && !path_is_dir) {
           return std::unexpected(ERROR_EXISTED_FILE);
