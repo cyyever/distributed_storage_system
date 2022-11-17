@@ -34,7 +34,7 @@ namespace raid_fs {
   class RAID6Controller : public RAIDController {
   public:
     RAID6Controller(const RAIDConfig &raid_config) {
-      data_node_number= raid_config.data_ports.size();
+      data_node_number = raid_config.data_ports.size();
       capacity = raid_config.disk_capacity * data_node_number;
       block_size = raid_config.block_size;
       for (auto port : raid_config.data_ports) {
@@ -55,18 +55,18 @@ namespace raid_fs {
     std::expected<std::map<LogicalRange, std::string>, Error>
     read(const std::set<LogicalRange> &data_ranges) override {
       auto block_no_set = convert_logical_range_to_raid_blocks(data_ranges);
-      std::map<LogicalRange, std::string> results;
+      std::map<uint64_t, std::string> raid_blocks;
 
       for (auto block_no : block_no_set) {
-
+        auto physical_node_no = block_no % data_node_number;
+        auto physical_block_no = block_no / data_node_number;
         ::grpc::ClientContext context;
         BlockReadRequest request;
-        request.set_block_no(block_no);
+        request.set_block_no(physical_block_no);
         BlockReadReply reply;
-        auto physical_node_no=block_no%data_node_number;
-        auto physical_block_no=block_no/data_node_number;
 
-        auto grpc_status = data_stubs[0]->Read(&context, request, &reply);
+        auto grpc_status =
+            data_stubs[physical_node_no]->Read(&context, request, &reply);
         if (!grpc_status.ok()) {
           LOG_ERROR("read block {} failed:{}", block_no,
                     grpc_status.error_message());
@@ -76,7 +76,24 @@ namespace raid_fs {
           return std::unexpected(reply.error());
         }
         assert(reply.has_ok());
-        blocks[block_no] = reply.ok().block();
+        raid_blocks[block_no] = reply.ok().block();
+      }
+      std::map<LogicalRange, std::string> results;
+      for (auto const &range : data_ranges) {
+        auto [offset, length] = range;
+        uint64_t p = offset;
+        auto end_pos = offset + length;
+        auto partial_length = std::min(block_size, block_size - p % block_size);
+        std::string result(raid_blocks[p / block_size], partial_length);
+        p += partial_length;
+        length -= partial_length;
+        while (p < end_pos) {
+          partial_length = std::min(length, block_size - p % block_size);
+          result.append(raid_blocks[p / block_size], partial_length);
+          p += block_size;
+          length -= partial_length;
+        }
+        results.emplace(range, std::move(result));
       }
       return results;
     }
