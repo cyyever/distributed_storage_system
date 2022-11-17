@@ -1,4 +1,5 @@
 
+
 #include <cyy/naive_lib/log/log.hpp>
 #include <cyy/naive_lib/util/error.hpp>
 #include <fmt/format.h>
@@ -25,7 +26,7 @@ namespace raid_fs {
       if (request->block_no() >= disk_ptr->get_block_number()) {
         LOG_ERROR("invalid block no {} {}", request->block_no(),
                   disk_ptr->get_block_number());
-        response->set_error(Error::ERROR_OUT_OF_RANGE);
+        response->set_error(Error::ERROR_FS_INTERNAL_ERROR);
         return ::grpc::Status::OK;
       }
       auto res = disk_ptr->read(request->block_no());
@@ -44,7 +45,7 @@ namespace raid_fs {
       if (request->block_no() >= disk_ptr->get_block_number()) {
         LOG_ERROR("invalid block no {} {}", request->block_no(),
                   disk_ptr->get_block_number());
-        response->set_error(Error::ERROR_OUT_OF_RANGE);
+        response->set_error(Error::ERROR_FS_INTERNAL_ERROR);
         return ::grpc::Status::OK;
       }
       if (request->block().size() != disk_ptr->get_block_size()) {
@@ -76,7 +77,9 @@ int main(int argc, char **argv) {
   std::vector<std::unique_ptr<raid_fs::RAIDNodeServiceImpl>> services;
 
   size_t service_id = 0;
-  for (auto port : cfg.ports) {
+  auto ports = cfg.data_ports;
+  ports.insert(ports.end(), cfg.parity_ports.begin(), cfg.parity_ports.end());
+  for (auto port : ports) {
     std::string server_address(fmt::format("0.0.0.0:{}", port));
     grpc::ServerBuilder builder;
     services.emplace_back(

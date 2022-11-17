@@ -19,10 +19,9 @@ namespace raid_fs {
         std::shared_ptr<RAIDController> raid_controller_ptr_,
         size_t block_size_)
         : raid_controller_ptr(raid_controller_ptr_), block_size(block_size_) {
-      raid_block_size = raid_controller_ptr->get_block_size();
-      if (block_size % raid_block_size != 0) {
+      if (raid_controller_ptr->get_capacity() % block_size != 0) {
         throw std::invalid_argument(
-            "file system block size must be a multiple of RAID block size");
+            "RAID capacity must be a multiple of file system block size");
       }
     }
     ~BlockCacheBackend() override = default;
@@ -36,33 +35,23 @@ namespace raid_fs {
       return block_no < block_number;
     }
     mapped_type load_data(const key_type &block_no) override {
-      block_data_type fs_block;
-      auto ratio = block_size / raid_block_size;
-      std::set<key_type> raid_block_no_set;
-      for (size_t i = block_no * ratio; i < (block_no + 1) * ratio; i++) {
-        raid_block_no_set.insert(i);
-      }
-      auto res = raid_controller_ptr->read_blocks(raid_block_no_set);
+      std::set<RAIDController::LogicalRange> data_ranges;
+      data_ranges.emplace(block_no * block_size, block_size);
+
+      auto res = raid_controller_ptr->read(data_ranges);
       if (!res.has_value()) {
         throw std::runtime_error(
             fmt::format("failed to read block {}", block_no));
       }
-      for (auto &[_, block] : res.value()) {
-        fs_block.append(std::move(block));
-      }
-      return std::make_shared<Block>(std::move(fs_block));
+      return std::make_shared<Block>(std::move(res.value().begin()->second));
     }
     void clear_data() override {}
     void erase_data(const key_type &) override {}
     void save_data(const key_type &block_no, mapped_type block) override {
-      std::map<key_type, std::string> raid_blocks;
-      auto ratio = block_size / raid_block_size;
-      for (size_t i = 0; i < ratio; i++) {
-        raid_blocks[block_no * ratio + i] =
-            block->data.substr(i * raid_block_size, raid_block_size);
-      }
+      std::map<uint64_t, std::string> data;
+      data.emplace(block_no * block_size, block->data);
 
-      auto err_res = raid_controller_ptr->write_blocks(raid_blocks);
+      auto err_res = raid_controller_ptr->write(data);
       if (err_res.has_value()) {
         throw std::runtime_error("failed to write block");
       }
@@ -71,7 +60,6 @@ namespace raid_fs {
   private:
     std::shared_ptr<RAIDController> raid_controller_ptr;
     size_t block_size;
-    size_t raid_block_size{};
   };
 
   class BlockCache : public ::cyy::algorithm::cache<uint64_t, block_ptr_type> {

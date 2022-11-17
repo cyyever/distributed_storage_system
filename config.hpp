@@ -4,10 +4,12 @@
  * \brief Configuration
  */
 #pragma once
+#include <array>
 #include <filesystem>
 #include <memory>
 #include <regex>
 #include <string>
+#include <vector>
 
 #include <fmt/format.h>
 
@@ -73,9 +75,12 @@ namespace raid_fs {
         : Config(config_file) {
       auto sub_yaml_node = yaml_node["RAID"];
       auto port = sub_yaml_node["first_node_port"].as<uint16_t>();
-      auto node_number = sub_yaml_node["node_number"].as<size_t>();
-      for (size_t i = 0; i < node_number; i++) {
-        ports.emplace_back(port + i);
+      auto data_node_number = sub_yaml_node["data_node_number"].as<size_t>();
+      for (size_t i = 0; i < data_node_number; i++, port++) {
+        data_ports.emplace_back(port);
+      }
+      for (size_t i = 0; i < std::size(parity_ports); i++, port++) {
+        parity_ports[i] = port;
       }
 
       block_size = parse_size(sub_yaml_node, "block_size");
@@ -85,7 +90,8 @@ namespace raid_fs {
       use_memory_disk = sub_yaml_node["use_memory_disk"].as<bool>();
       disk_path_prefix = sub_yaml_node["disk_path_prefix"].as<std::string>();
     }
-    std::vector<uint16_t> ports;
+    std::vector<uint16_t> data_ports;
+    std::array<uint16_t, 2> parity_ports;
     size_t block_size{};
     bool use_memory_disk{};
     std::string disk_path_prefix{};
