@@ -7,6 +7,7 @@ include(cmake/all.cmake)
 
 option(USE_ASAN "Build with asan" OFF)
 option(USE_UBSAN "Build with ubsan" OFF)
+option(USE_TSAN "Build with tsan" OFF)
 
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
@@ -65,6 +66,10 @@ endif()
 if(USE_UBSAN)
   target_link_libraries(fs_server PUBLIC GoogleSanitizer::undefined)
   target_link_libraries(raid_node_server PUBLIC GoogleSanitizer::undefined)
+endif()
+if(USE_TSAN)
+  target_link_libraries(fs_server PUBLIC GoogleSanitizer::thread)
+  target_link_libraries(raid_node_server PUBLIC GoogleSanitizer::thread)
 endif()
 
 add_subdirectory(test)
