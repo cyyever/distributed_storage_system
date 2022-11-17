@@ -428,6 +428,7 @@ namespace raid_fs {
             release_data_block(block_ptr);
           }
         }
+        release_data_block(indirect_block_pointer);
       };
       while (i < INode::get_direct_block_pointer_number() +
                      INode::get_indirect_block_pointer_number()) {
@@ -437,7 +438,6 @@ namespace raid_fs {
           continue;
         }
         release_indirect_block(indirect_block_pointer);
-        release_data_block(indirect_block_pointer);
       }
       while (i < INode::get_direct_block_pointer_number() +
                      INode::get_indirect_block_pointer_number() +
@@ -719,7 +719,7 @@ namespace raid_fs {
             std::byte mask{0b10000000};
             mask >>= (block_no_in_table % 8);
             if ((mask & new_byte) == mask) {
-              new_byte |= (~mask);
+              new_byte &= (~mask);
               view[0] = std::to_integer<char>(new_byte);
               res = true;
               return std::pair<bool, bool>{true, true};
