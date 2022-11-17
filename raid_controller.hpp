@@ -47,7 +47,7 @@ namespace raid_fs {
           fmt::format("localhost:{}", raid_config.parity_ports[0]),
           ::grpc::InsecureChannelCredentials());
       P_stub = RAIDNode::NewStub(channel);
-      P_stub = RAIDNode::NewStub(channel);
+      Q_stub = RAIDNode::NewStub(channel);
     }
     ~RAID6Controller() override = default;
     size_t get_capacity() override { return capacity; }
@@ -85,12 +85,12 @@ namespace raid_fs {
         auto end_pos = offset + length;
         auto partial_length = std::min(block_size, block_size - p % block_size);
         assert(partial_length == block_size);
-        std::string result(raid_blocks[p / block_size], partial_length);
+        std::string result(raid_blocks[p / block_size].data(), partial_length);
         p += partial_length;
         length -= partial_length;
         while (p < end_pos) {
           partial_length = std::min(length, block_size - p % block_size);
-          result.append(raid_blocks[p / block_size], partial_length);
+          result.append(raid_blocks[p / block_size].data(), partial_length);
           p += block_size;
           length -= partial_length;
         }

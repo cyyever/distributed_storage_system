@@ -73,7 +73,7 @@ namespace raid_fs {
   struct RAIDConfig : public Config {
     explicit RAIDConfig(const std::filesystem::path &config_file)
         : Config(config_file) {
-      auto sub_yaml_node = yaml_node["RAID"];
+      auto sub_yaml_node = yaml_node["RAID6"];
       auto port = sub_yaml_node["first_node_port"].as<uint16_t>();
       auto data_node_number = sub_yaml_node["data_node_number"].as<size_t>();
       for (size_t i = 0; i < data_node_number; i++, port++) {
