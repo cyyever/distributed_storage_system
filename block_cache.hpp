@@ -7,7 +7,7 @@
 #include <cassert>
 #include <cstdint>
 
-#include <cyy/algorithm/dict/cache.hpp>
+#include <cyy/algorithm/dict/lru_cache.hpp>
 
 #include "block.hpp"
 #include "raid_controller.hpp"
@@ -34,27 +34,23 @@ namespace raid_fs {
       auto block_number = raid_controller_ptr->get_capacity() / block_size;
       return block_no < block_number;
     }
-    mapped_type load_data(const key_type &block_no) override {
+    std::optional<mapped_type> load_data(const key_type &block_no) override {
       std::set<RAIDController::LogicalRange> data_ranges;
       data_ranges.emplace(block_no * block_size, block_size);
 
       auto res = raid_controller_ptr->read(data_ranges);
       if (!res.has_value()) {
-        throw std::runtime_error(
-            fmt::format("failed to read block {}", block_no));
+        LOG_ERROR("failed to read block {}", block_no);
+        return {};
       }
       return std::make_shared<Block>(std::move(res.value().begin()->second));
     }
-    void clear_data() override {}
+    void clear() override {}
     void erase_data(const key_type &) override {}
-    void save_data(const key_type &block_no, mapped_type block) override {
+    bool save_data(const key_type &block_no, mapped_type block) override {
       std::map<uint64_t, std::string> data;
       data.emplace(block_no * block_size, block->data);
-
-      auto err_res = raid_controller_ptr->write(data);
-      if (err_res.has_value()) {
-        throw std::runtime_error("failed to write block");
-      }
+      return raid_controller_ptr->write(data);
     }
 
   private:
@@ -62,12 +58,13 @@ namespace raid_fs {
     size_t block_size;
   };
 
-  class BlockCache : public ::cyy::algorithm::cache<uint64_t, block_ptr_type> {
+  class BlockCache
+      : public ::cyy::algorithm::lru_cache<uint64_t, block_ptr_type> {
   public:
     explicit BlockCache(
         size_t capacity, size_t block_size,
         const std::shared_ptr<RAIDController> &raid_controller_ptr)
-        : cyy::algorithm::cache<uint64_t, block_ptr_type>(
+        : cyy::algorithm::lru_cache<uint64_t, block_ptr_type>(
               std::make_unique<BlockCacheBackend>(raid_controller_ptr,
                                                   block_size)) {
       this->set_in_memory_number(capacity / block_size);

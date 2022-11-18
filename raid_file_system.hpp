@@ -13,7 +13,7 @@
 #include <tuple>
 #include <utility>
 
-#include <cyy/algorithm/dict/lru_cache.hpp>
+#include <cyy/algorithm/dict/ordered_dict.hpp>
 #include <cyy/naive_lib/util/runnable.hpp>
 #include <fmt/format.h>
 
@@ -367,6 +367,10 @@ namespace raid_fs {
                  block_number - blk.inode_number - blk.data_block_number);
         // wrapped the above code in local scope such that the super block
         // changes are written to the cache now.
+        for (uint64_t block_no = 1; block_no < blk.inode_table_offset;
+             block_no++) {
+          block_cache.emplace(block_no, std::make_shared<Block>());
+        }
       }
 
       // allocate inode for the root directory '/'
@@ -987,7 +991,7 @@ namespace raid_fs {
     size_t block_number;
     BlockCache block_cache;
     std::recursive_mutex metadata_mutex;
-    cyy::algorithm::lru_cache<uint64_t, std::shared_ptr<std::shared_mutex>>
+    cyy::algorithm::ordered_dict<uint64_t, std::shared_ptr<std::shared_mutex>>
         inode_mutexes;
     SyncThread sync_thread;
     uint64_t root_inode_no{};

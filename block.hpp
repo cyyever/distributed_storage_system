@@ -29,6 +29,7 @@ namespace raid_fs {
     }
   };
   static_assert(sizeof(SuperBlock) == 72);
+
   enum class file_type : uint8_t {
     free_dir_entry_head = 0,
     directory = 1,

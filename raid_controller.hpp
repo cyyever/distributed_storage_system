@@ -28,8 +28,7 @@ namespace raid_fs {
     virtual size_t get_capacity() = 0;
     virtual std::expected<std::map<LogicalRange, std::string>, Error>
     read(const std::set<LogicalRange> &data_ranges) = 0;
-    virtual std::optional<Error>
-    write(std::map<uint64_t, std::string> blocks) = 0;
+    virtual bool write(std::map<uint64_t, std::string> blocks) = 0;
   };
   class RAID6Controller : public RAIDController {
   public:
@@ -98,15 +97,15 @@ namespace raid_fs {
       }
       return results;
     }
-    std::optional<Error>
-    write(std::map<uint64_t, std::string> blocks) override {
+    bool write(std::map<uint64_t, std::string> blocks) override {
       std::map<uint64_t, std::string_view> raid_blocks;
       for (auto const &[offset, block] : blocks) {
         assert(offset % block_size == 0);
         assert(block.size() % block_size == 0);
         for (size_t p = offset; p < offset + block.size(); p += block_size) {
-          raid_blocks.emplace(p,
-                              std::string_view{block.data() + p, block_size});
+          raid_blocks.emplace(
+              p / block_size,
+              std::string_view{block.data() + p - offset, block_size});
         }
       }
 
@@ -124,14 +123,14 @@ namespace raid_fs {
         if (!grpc_status.ok()) {
           LOG_ERROR("write block {} failed:{}", block_no,
                     grpc_status.error_message());
-          return {Error::ERROR_FS_INTERNAL_ERROR};
+          return false;
         }
         if (reply.has_error()) {
           LOG_ERROR("write block {} failed:{}", block_no, reply.error());
-          return {reply.error()};
+          return false;
         }
       }
-      return {};
+      return true;
     }
 
   private:
