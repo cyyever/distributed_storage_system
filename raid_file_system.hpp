@@ -365,12 +365,14 @@ namespace raid_fs {
                  "{} blocks for bookkeeping",
                  blk.inode_number, blk.data_block_number, block_number,
                  block_number - blk.inode_number - blk.data_block_number);
-        // wrapped the above code in local scope such that the super block
-        // changes are written to the cache now.
-        for (uint64_t block_no = 1; block_no < blk.inode_table_offset;
-             block_no++) {
+
+        // preallocate cache of bitmap
+        for (uint64_t block_no = super_block_no + 1;
+             block_no < blk.inode_table_offset; block_no++) {
           block_cache.emplace(block_no, std::make_shared<Block>());
         }
+        // wrapped the above code in local scope such that the super block
+        // changes are written to the cache now.
       }
 
       // allocate inode for the root directory '/'
