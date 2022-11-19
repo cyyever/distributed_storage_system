@@ -251,6 +251,7 @@ namespace raid_fs {
             return;
           }
           lk.unlock();
+          LOG_DEBUG("flush cache");
           impl_ptr->block_cache.flush();
           lk.lock();
           // release unused mutex
@@ -264,6 +265,8 @@ namespace raid_fs {
             LOG_DEBUG("release mutex for {}", k);
             v->unlock();
           }
+          LOG_DEBUG("allocated mutex number {}",
+                    impl_ptr->inode_mutexes.size());
         }
       }
 
@@ -280,7 +283,10 @@ namespace raid_fs {
         throw std::runtime_error(
             fmt::format("failed to read block {}", block_no));
       }
-      assert(res.value().get() != nullptr);
+      if (!res.value().get()) {
+        LOG_ERROR("invalid block {}", block_no);
+        throw std::runtime_error(fmt::format("invalid block {}", block_no));
+      }
       return res.value();
     }
 
@@ -360,19 +366,19 @@ namespace raid_fs {
           } else {
             break;
           }
+          LOG_WARN("allocate {} inodes and {} data blocks, total {} blocks, "
+                   "{} blocks for bookkeeping",
+                   blk.inode_number, blk.data_block_number, block_number,
+                   block_number - blk.inode_number - blk.data_block_number);
         }
-        LOG_WARN("allocate {} inodes and {} data blocks, total {} blocks, "
-                 "{} blocks for bookkeeping",
-                 blk.inode_number, blk.data_block_number, block_number,
-                 block_number - blk.inode_number - blk.data_block_number);
+        // wrapped the above code in local scope such that the super block
+        // changes are written to the cache now.
 
         // preallocate cache of bitmap
         for (uint64_t block_no = super_block_no + 1;
              block_no < blk.inode_table_offset; block_no++) {
           block_cache.emplace(block_no, std::make_shared<Block>());
         }
-        // wrapped the above code in local scope such that the super block
-        // changes are written to the cache now.
       }
 
       // allocate inode for the root directory '/'
