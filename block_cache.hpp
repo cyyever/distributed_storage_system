@@ -48,9 +48,20 @@ namespace raid_fs {
     void clear() override {}
     void erase_data(const key_type &) override {}
     bool save_data(const key_type &block_no, mapped_type block) override {
+      throw std::runtime_error("shouldn't be called");
+    }
+    std::vector<std::pair<key_type, bool>> batch_save_data(
+        std::vector<std::pair<key_type, mapped_type>> batch_data) override {
       std::map<uint64_t, std::string> data;
-      data.emplace(block_no * block_size, block->data);
-      return raid_controller_ptr->write(data);
+      for (auto [block_no, block_ptr] : batch_data) {
+        data.emplace(block_no * block_size, block_ptr->data);
+      }
+      auto raid_res = raid_controller_ptr->write(data);
+      std::vector<std::pair<key_type, bool>> res;
+      for (auto const &[block_no, _] : batch_data) {
+        res.emplace_back(block_no, raid_res);
+      }
+      return res;
     }
 
   private:
