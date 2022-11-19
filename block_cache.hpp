@@ -34,16 +34,31 @@ namespace raid_fs {
       auto block_number = raid_controller_ptr->get_capacity() / block_size;
       return block_no < block_number;
     }
-    std::optional<mapped_type> load_data(const key_type &block_no) override {
-      std::set<RAIDController::LogicalRange> data_ranges;
-      data_ranges.emplace(block_no * block_size, block_size);
 
-      auto res = raid_controller_ptr->read(data_ranges);
-      if (!res.has_value()) {
-        LOG_ERROR("failed to read block {}", block_no);
-        return {};
+    std::unordered_map<key_type, std::optional<mapped_type>>
+    batch_load_data(const std::vector<key_type> &keys) override {
+      std::set<RAIDController::LogicalRange> data_ranges;
+      for (auto block_no : keys) {
+        data_ranges.emplace(block_no * block_size, block_size);
       }
-      return std::make_shared<Block>(std::move(res.value().begin()->second));
+
+      auto raid_res = raid_controller_ptr->read(data_ranges);
+      std::unordered_map<key_type, std::optional<mapped_type>> results;
+      for (auto &[range, block_opt] : raid_res) {
+        if (block_opt.has_value()) {
+          results.emplace(
+              range.first / block_size,
+              std::make_shared<Block>(std::move(block_opt.value())));
+        } else {
+          results.emplace(range.first / block_size,
+                          std::optional<mapped_type>{});
+        }
+      }
+      return results;
+    }
+
+    std::optional<mapped_type> load_data(const key_type &block_no) override {
+      throw std::runtime_error("shouldn't be called");
     }
     void clear() override {}
     void erase_data(const key_type &) override {}
