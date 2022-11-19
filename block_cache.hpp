@@ -35,7 +35,7 @@ namespace raid_fs {
       return block_no < block_number;
     }
 
-    std::unordered_map<key_type, std::optional<mapped_type>>
+    std::unordered_map<key_type, mapped_type>
     batch_load_data(const std::vector<key_type> &keys) override {
       std::set<RAIDController::LogicalRange> data_ranges;
       for (auto block_no : keys) {
@@ -43,16 +43,10 @@ namespace raid_fs {
       }
 
       auto raid_res = raid_controller_ptr->read(data_ranges);
-      std::unordered_map<key_type, std::optional<mapped_type>> results;
-      for (auto &[range, block_opt] : raid_res) {
-        if (block_opt.has_value()) {
-          results.emplace(
-              range.first / block_size,
-              std::make_shared<Block>(std::move(block_opt.value())));
-        } else {
-          results.emplace(range.first / block_size,
-                          std::optional<mapped_type>{});
-        }
+      std::unordered_map<key_type, mapped_type> results;
+      for (auto &[range, block_data] : raid_res) {
+        results.emplace(range.first / block_size,
+                        std::make_shared<Block>(std::move(block_data)));
       }
       return results;
     }

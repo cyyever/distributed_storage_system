@@ -26,7 +26,7 @@ namespace raid_fs {
     using LogicalRange = std::pair<uint64_t, uint64_t>;
     virtual ~RAIDController() = default;
     virtual size_t get_capacity() = 0;
-    virtual std::expected<std::map<LogicalRange, std::string>, Error>
+    virtual std::map<LogicalRange, std::string>
     read(const std::set<LogicalRange> &data_ranges) = 0;
     virtual bool write(std::map<uint64_t, std::string> blocks) = 0;
   };
@@ -51,7 +51,7 @@ namespace raid_fs {
     ~RAID6Controller() override = default;
     size_t get_capacity() override { return capacity; }
 
-    std::expected<std::map<LogicalRange, std::string>, Error>
+    std::map<LogicalRange, std::string>
     read(const std::set<LogicalRange> &data_ranges) override {
       auto block_no_set = convert_logical_range_to_raid_blocks(data_ranges);
       std::map<uint64_t, std::string> raid_blocks;
@@ -69,10 +69,11 @@ namespace raid_fs {
         if (!grpc_status.ok()) {
           LOG_ERROR("read block {} failed:{}", block_no,
                     grpc_status.error_message());
-          return std::unexpected(Error::ERROR_FS_INTERNAL_ERROR);
+          continue;
         }
         if (reply.has_error()) {
-          return std::unexpected(reply.error());
+          LOG_ERROR("read block {} failed:{}", block_no, reply.error());
+          continue;
         }
         assert(reply.has_ok());
         raid_blocks[block_no] = reply.ok().block();
@@ -80,7 +81,21 @@ namespace raid_fs {
       std::map<LogicalRange, std::string> results;
       for (auto const &range : data_ranges) {
         auto [offset, length] = range;
+        bool has_raid_block = true;
+        for (auto block_no = offset / block_size;
+             block_no <= (offset + length - 1) / block_size; block_no++) {
+          if (!raid_blocks.contains(block_no)) {
+            has_raid_block = false;
+
+            break;
+          }
+        }
+        if (!has_raid_block) {
+          continue;
+        }
+
         uint64_t p = offset;
+        auto block_no = p / block_size;
         auto end_pos = offset + length;
         auto partial_length = std::min(block_size, block_size - p % block_size);
         assert(partial_length == block_size);
@@ -88,6 +103,7 @@ namespace raid_fs {
         p += partial_length;
         length -= partial_length;
         while (p < end_pos) {
+          block_no = p / block_size;
           partial_length = std::min(length, block_size - p % block_size);
           result.append(raid_blocks[p / block_size].data(), partial_length);
           p += block_size;
