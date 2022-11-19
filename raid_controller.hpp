@@ -53,43 +53,19 @@ namespace raid_fs {
 
     std::map<LogicalRange, std::string>
     read(const std::set<LogicalRange> &data_ranges) override {
-      auto block_no_set = convert_logical_range_to_raid_blocks(data_ranges);
-      std::map<uint64_t, std::string> raid_blocks;
-
-      for (auto block_no : block_no_set) {
-        auto physical_node_no = block_no % data_node_number;
-        auto physical_block_no = block_no / data_node_number;
-        ::grpc::ClientContext context;
-        BlockReadRequest request;
-        request.set_block_no(physical_block_no);
-        BlockReadReply reply;
-
-        auto grpc_status =
-            data_stubs[physical_node_no]->Read(&context, request, &reply);
-        if (!grpc_status.ok()) {
-          LOG_ERROR("read block {} failed:{}", block_no,
-                    grpc_status.error_message());
-          continue;
-        }
-        if (reply.has_error()) {
-          LOG_ERROR("read block {} failed:{}", block_no, reply.error());
-          continue;
-        }
-        assert(reply.has_ok());
-        raid_blocks[block_no] = reply.ok().block();
-      }
+      auto raid_blocks =
+          concurrent_read(convert_logical_range_to_raid_blocks(data_ranges));
       std::map<LogicalRange, std::string> results;
       for (auto const &range : data_ranges) {
         auto [offset, length] = range;
         bool has_raid_block = true;
-        for (auto block_no = offset / block_size;
-             block_no <= (offset + length - 1) / block_size; block_no++) {
+        for (auto block_no : convert_logical_range_to_raid_blocks({range})) {
           if (!raid_blocks.contains(block_no)) {
             has_raid_block = false;
-
             break;
           }
         }
+
         if (!has_raid_block) {
           continue;
         }
@@ -159,6 +135,34 @@ namespace raid_fs {
         }
       }
       return raid_block_no_set;
+    }
+    std::map<uint64_t, std::string>
+    concurrent_read(const std::set<uint64_t> &block_no_set) {
+      std::map<uint64_t, std::string> raid_blocks;
+
+      for (auto block_no : block_no_set) {
+        auto physical_node_no = block_no % data_node_number;
+        auto physical_block_no = block_no / data_node_number;
+        ::grpc::ClientContext context;
+        BlockReadRequest request;
+        request.set_block_no(physical_block_no);
+        BlockReadReply reply;
+
+        auto grpc_status =
+            data_stubs[physical_node_no]->Read(&context, request, &reply);
+        if (!grpc_status.ok()) {
+          LOG_ERROR("read block {} failed:{}", block_no,
+                    grpc_status.error_message());
+          continue;
+        }
+        if (reply.has_error()) {
+          LOG_ERROR("read block {} failed:{}", block_no, reply.error());
+          continue;
+        }
+        assert(reply.has_ok());
+        raid_blocks[block_no] = reply.ok().block();
+      }
+      return raid_blocks;
     }
 
   private:
