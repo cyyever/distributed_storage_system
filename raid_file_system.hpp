@@ -366,11 +366,11 @@ namespace raid_fs {
           } else {
             break;
           }
-          LOG_WARN("allocate {} inodes and {} data blocks, total {} blocks, "
-                   "{} blocks for bookkeeping",
-                   blk.inode_number, blk.data_block_number, block_number,
-                   block_number - blk.inode_number - blk.data_block_number);
         }
+        LOG_WARN("allocate {} inodes and {} data blocks, total {} blocks, "
+                 "{} blocks for bookkeeping",
+                 blk.inode_number, blk.data_block_number, block_number,
+                 block_number - blk.inode_number - blk.data_block_number);
         // wrapped the above code in local scope such that the super block
         // changes are written to the cache now.
 

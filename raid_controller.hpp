@@ -71,7 +71,6 @@ namespace raid_fs {
         }
 
         uint64_t p = offset;
-        auto block_no = p / block_size;
         auto end_pos = offset + length;
         auto partial_length = std::min(block_size, block_size - p % block_size);
         assert(partial_length == block_size);
@@ -79,7 +78,6 @@ namespace raid_fs {
         p += partial_length;
         length -= partial_length;
         while (p < end_pos) {
-          block_no = p / block_size;
           partial_length = std::min(length, block_size - p % block_size);
           result.append(raid_blocks[p / block_size].data(), partial_length);
           p += block_size;
@@ -137,31 +135,66 @@ namespace raid_fs {
       return raid_block_no_set;
     }
     std::map<uint64_t, std::string>
-    concurrent_read(const std::set<uint64_t> &block_no_set) {
+    concurrent_read(std::set<uint64_t> block_no_set) {
       std::map<uint64_t, std::string> raid_blocks;
+      grpc::CompletionQueue cq;
+      while (!block_no_set.empty()) {
+        std::set<uint64_t> new_block_no_set;
+        std::map<uint64_t,
+                 std::tuple<std::unique_ptr<grpc::ClientAsyncResponseReader<
+                                BlockReadReply>>,
+                            BlockReadReply, ::grpc::Status, uint64_t>>
+            reply_map;
+        std::map<uint64_t, ::grpc::ClientContext> contexts;
 
-      for (auto block_no : block_no_set) {
-        auto physical_node_no = block_no % data_node_number;
-        auto physical_block_no = block_no / data_node_number;
-        ::grpc::ClientContext context;
-        BlockReadRequest request;
-        request.set_block_no(physical_block_no);
-        BlockReadReply reply;
+        for (auto block_no : block_no_set) {
+          auto physical_node_no = block_no % data_node_number;
+          if (reply_map.contains(physical_node_no)) {
+            new_block_no_set.insert(block_no);
+            continue;
+          }
+          auto physical_block_no = block_no / data_node_number;
+          BlockReadRequest request;
+          request.set_block_no(physical_block_no);
 
-        auto grpc_status =
-            data_stubs[physical_node_no]->Read(&context, request, &reply);
-        if (!grpc_status.ok()) {
-          LOG_ERROR("read block {} failed:{}", block_no,
-                    grpc_status.error_message());
-          continue;
+          std::get<0>(reply_map[physical_node_no]) =
+              data_stubs[physical_node_no]->AsyncRead(
+                  &contexts[physical_node_no], request, &cq);
+          std::get<3>(reply_map[physical_node_no]) = block_no;
+          std::get<0>(reply_map[physical_node_no])
+              ->Finish(&std::get<1>(reply_map[physical_node_no]),
+                       &std::get<2>(reply_map[physical_node_no]),
+                       (void *)physical_node_no);
         }
-        if (reply.has_error()) {
-          LOG_ERROR("read block {} failed:{}", block_no, reply.error());
-          continue;
+        while (!reply_map.empty()) {
+          void *got_tag = nullptr;
+          bool ok = false;
+          if (!cq.Next(&got_tag, &ok) || !ok) {
+            throw std::runtime_error("cg next failed");
+          }
+          auto physical_node_no = reinterpret_cast<uint64_t>(got_tag);
+
+          auto node = reply_map.extract(physical_node_no);
+          if (node.empty()) {
+            throw std::runtime_error(
+                fmt::format("invalid grpc tag {}", got_tag));
+          }
+          auto &[_, reply, grpc_status, block_no] = node.mapped();
+
+          if (!grpc_status.ok()) {
+            LOG_ERROR("read block {} failed:{}", block_no,
+                      grpc_status.error_message());
+            continue;
+          }
+          if (reply.has_error()) {
+            LOG_ERROR("read block {} failed:{}", block_no, reply.error());
+            continue;
+          }
+          raid_blocks[block_no] = reply.ok().block();
         }
-        assert(reply.has_ok());
-        raid_blocks[block_no] = reply.ok().block();
+        block_no_set = std::move(new_block_no_set);
       }
+
       return raid_blocks;
     }
 
