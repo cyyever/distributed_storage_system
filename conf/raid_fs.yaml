@@ -1,6 +1,6 @@
 ---
 
-disk_capacity: 10GB
+disk_capacity: 64GB
 debug_log: true
 
 filesystem:
