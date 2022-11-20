@@ -7,6 +7,7 @@
 #pragma once
 #include <algorithm>
 #include <bit>
+#include <expected>>
 #include <functional>
 #include <ranges>
 #include <shared_mutex>

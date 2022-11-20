@@ -68,7 +68,11 @@ namespace raid_fs {
       auto raid_res = raid_controller_ptr->write(data);
       std::vector<std::pair<key_type, bool>> res;
       for (auto const &[block_no, _] : batch_data) {
-        res.emplace_back(block_no, raid_res);
+        if (raid_res.contains(block_no * block_size)) {
+          res.emplace_back(block_no, true);
+        } else {
+          res.emplace_back(block_no, false);
+        }
       }
       return res;
     }
