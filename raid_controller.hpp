@@ -22,11 +22,10 @@ namespace raid_fs {
   class RAIDController {
   public:
     // data offset and length
-    using LogicalRange = std::pair<uint64_t, uint64_t>;
     virtual ~RAIDController() = default;
     virtual size_t get_capacity() = 0;
-    virtual std::map<LogicalRange, std::string>
-    read(const std::set<LogicalRange> &data_ranges) = 0;
+    virtual std::map<LogicalAddressRange, std::string>
+    read(const std::set<LogicalAddressRange> &data_ranges) = 0;
     virtual std::set<uint64_t>
     write(std::map<uint64_t, std::string> blocks) = 0;
   };
@@ -51,11 +50,11 @@ namespace raid_fs {
     ~RAID6Controller() override = default;
     size_t get_capacity() override { return capacity; }
 
-    std::map<LogicalRange, std::string>
-    read(const std::set<LogicalRange> &data_ranges) override {
+    std::map<LogicalAddressRange, std::string>
+    read(const std::set<LogicalAddressRange> &data_ranges) override {
       auto raid_blocks =
           concurrent_read(convert_logical_range_to_raid_blocks(data_ranges));
-      std::map<LogicalRange, std::string> results;
+      std::map<LogicalAddressRange, std::string> results;
       for (auto const &range : data_ranges) {
         auto [offset, length] = range;
         bool has_raid_block = true;
@@ -118,7 +117,7 @@ namespace raid_fs {
 
   private:
     std::set<uint64_t> convert_logical_range_to_raid_blocks(
-        const std::set<LogicalRange> &data_ranges) {
+        const std::set<LogicalAddressRange> &data_ranges) {
       std::set<uint64_t> raid_block_no_set;
       for (auto const &[offset, length] : data_ranges) {
         for (uint64_t p = offset; p < offset + length; p += block_size) {

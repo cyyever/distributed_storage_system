@@ -37,7 +37,7 @@ namespace raid_fs {
 
     std::unordered_map<key_type, mapped_type>
     batch_load_data(const std::vector<key_type> &keys) override {
-      std::set<RAIDController::LogicalRange> data_ranges;
+      std::set<LogicalAddressRange> data_ranges;
       for (auto block_no : keys) {
         data_ranges.emplace(block_no * block_size, block_size);
       }
@@ -45,7 +45,7 @@ namespace raid_fs {
       auto raid_res = raid_controller_ptr->read(data_ranges);
       std::unordered_map<key_type, mapped_type> results;
       for (auto &[range, block_data] : raid_res) {
-        results.emplace(range.first / block_size,
+        results.emplace(range.offset / block_size,
                         std::make_shared<Block>(std::move(block_data)));
       }
       return results;
