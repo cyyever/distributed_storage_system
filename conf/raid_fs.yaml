@@ -1,6 +1,6 @@
 ---
 
-disk_capacity: 64GB
+disk_capacity: 4GB
 debug_log: true
 
 filesystem:
@@ -10,7 +10,7 @@ filesystem:
   block_cache_seconds: 30
 
 RAID6:
-  data_node_number: 10
+  data_node_number: 16
   first_node_port: 60001
   block_size: 2KB
   use_memory_disk: true

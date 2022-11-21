@@ -572,12 +572,15 @@ namespace raid_fs {
     block_data_type read_data(const INode &inode, uint64_t offset,
                               uint64_t length, bool check_res = false) {
       block_data_type data;
-      LogicalAddressRange address_range(offset, std::min(length, inode.size-offset));
-      for (auto [piece_offset, piece_length] :
-           address_range.split(block_size)) {
-        auto data_block_ptr = get_data_block_of_file(inode, piece_offset);
-        data.append(data_block_ptr->data.data() + piece_offset % block_size,
-                    piece_length);
+      if (offset < inode.size) {
+        LogicalAddressRange address_range(
+            offset, std::min(length, inode.size - offset));
+        for (auto [piece_offset, piece_length] :
+             address_range.split(block_size)) {
+          auto data_block_ptr = get_data_block_of_file(inode, piece_offset);
+          data.append(data_block_ptr->data.data() + piece_offset % block_size,
+                      piece_length);
+        }
       }
       if (check_res && data.size() != length) {
         throw std::runtime_error(
