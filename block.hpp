@@ -24,7 +24,8 @@ namespace raid_fs {
     bool operator==(const LogicalAddressRange &rhs) const = default;
 
     auto split(uint64_t block_size) const {
-      auto block_count = (offset + length-1) / block_size - offset / block_size+1;
+      auto block_count =
+          (offset + length - 1) / block_size - offset / block_size + 1;
       auto tmp_offset = offset;
       auto tmp_length = length;
       return std::views::iota(uint64_t(0), block_count) |

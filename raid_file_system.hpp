@@ -572,19 +572,16 @@ namespace raid_fs {
     block_data_type read_data(const INode &inode, uint64_t offset,
                               uint64_t length, bool check_res = false) {
       block_data_type data;
-      auto old_length = length;
-      while (offset < inode.size) {
-        auto data_block_ptr = get_data_block_of_file(inode, offset);
-        auto partial_length =
-            std::min(block_size - offset % block_size, length);
-        data.append(data_block_ptr->data.data() + offset % block_size,
-                    partial_length);
-        offset += partial_length;
-        length -= partial_length;
+      LogicalAddressRange address_range(offset, std::min(length, inode.size-offset));
+      for (auto [piece_offset, piece_length] :
+           address_range.split(block_size)) {
+        auto data_block_ptr = get_data_block_of_file(inode, piece_offset);
+        data.append(data_block_ptr->data.data() + piece_offset % block_size,
+                    piece_length);
       }
-      if (check_res && data.size() != old_length) {
-        throw std::runtime_error(fmt::format("invalid read operation {} {}",
-                                             data.size(), old_length));
+      if (check_res && data.size() != length) {
+        throw std::runtime_error(
+            fmt::format("invalid read operation {} {}", data.size(), length));
       }
       return data;
     }
@@ -778,13 +775,15 @@ namespace raid_fs {
     void iterate_bytes(size_t byte_offset, size_t length,
                        const std::function<std::pair<bool, bool>(
                            block_data_view_type data_view, size_t)> &callback) {
-      LogicalAddressRange address_range(byte_offset,length);
-      for(auto [piece_offset,piece_length]:address_range.split(block_size)) {
-        auto block_no =piece_offset/ block_size;
+      LogicalAddressRange address_range(byte_offset, length);
+      for (auto [piece_offset, piece_length] :
+           address_range.split(block_size)) {
+        auto block_no = piece_offset / block_size;
         auto block = get_block(block_no);
-        auto [changed, finish] = callback(
-            block_data_view_type(&block->data[piece_offset%block_size],piece_length),
-            piece_offset);
+        auto [changed, finish] =
+            callback(block_data_view_type(
+                         &block->data[piece_offset % block_size], piece_length),
+                     piece_offset);
         if (changed) {
           block_cache.emplace(block_no, block);
         }
