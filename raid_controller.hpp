@@ -24,13 +24,12 @@
 namespace raid_fs {
   class RAIDController {
   public:
-    // data offset and length
     virtual ~RAIDController() = default;
     virtual size_t get_capacity() = 0;
     virtual std::map<LogicalAddressRange, byte_stream_type>
     read(const std::set<LogicalAddressRange> &data_ranges) = 0;
     virtual std::set<uint64_t>
-    write(std::map<uint64_t,byte_stream_type> blocks) = 0;
+    write(std::map<uint64_t, byte_stream_type> blocks) = 0;
   };
   class RAID6Controller : public RAIDController {
   public:
@@ -56,20 +55,16 @@ namespace raid_fs {
     std::map<LogicalAddressRange, byte_stream_type>
     read(const std::set<LogicalAddressRange> &data_ranges) override {
       auto raid_blocks = concurrent_read(get_raid_block_no(data_ranges));
-      std::map<LogicalAddressRange,byte_stream_type> results;
+      std::map<LogicalAddressRange, byte_stream_type> results;
       for (auto const &range : data_ranges) {
-        bool has_raid_block = true;
-        for (auto block_no : get_raid_block_no({range})) {
-          if (!raid_blocks.contains(block_no)) {
-            has_raid_block = false;
-            break;
-          }
-        }
-
+        bool has_raid_block =
+            std::ranges::all_of(get_raid_block_no({range}), [&](auto block_no) {
+              return raid_blocks.contains(block_no);
+            });
         if (!has_raid_block) {
           continue;
         }
-          byte_stream_type result;
+        byte_stream_type result;
         result.reserve(range.length);
         for (auto [offset, length] : range.split(block_size)) {
           result.append(raid_blocks[offset / block_size].data() +
@@ -80,7 +75,8 @@ namespace raid_fs {
       }
       return results;
     }
-    std::set<uint64_t> write(std::map<uint64_t,byte_stream_type> blocks) override {
+    std::set<uint64_t>
+    write(std::map<uint64_t, byte_stream_type> blocks) override {
       std::map<uint64_t, std::string_view> raid_blocks;
       for (auto const &[offset, block] : blocks) {
         assert(offset % block_size == 0);
@@ -118,9 +114,9 @@ namespace raid_fs {
       }
       return raid_block_no_set;
     }
-    std::map<uint64_t,byte_stream_type>
+    std::map<uint64_t, byte_stream_type>
     concurrent_read(std::set<uint64_t> block_no_set) {
-      std::map<uint64_t,byte_stream_type> raid_blocks;
+      std::map<uint64_t, byte_stream_type> raid_blocks;
       grpc::CompletionQueue cq;
       while (!block_no_set.empty()) {
         std::set<uint64_t> new_block_no_set;

@@ -15,6 +15,7 @@ namespace raid_fs {
   using block_data_view_type = std::span<char>;
   using const_block_data_view_type = std::span<const char>;
 
+  // data offset and length
   struct LogicalAddressRange {
     uint64_t offset;
     uint64_t length;
