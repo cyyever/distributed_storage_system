@@ -7,6 +7,7 @@
 #include <ranges>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace raid_fs {
   using byte_stream_type = std::string;
@@ -24,11 +25,14 @@ namespace raid_fs {
       auto block_count = (offset + length) / block_size - offset / block_size;
       return std::views::iota(uint64_t(0), block_count) |
              std::views::transform([=, this](auto idx) {
+               auto first_piece_length = (block_size - offset % block_size);
                if (idx == 0) {
-                 return offset;
+                 return LogicalAddressRange(offset, first_piece_length);
                }
-               auto second_offset = offset + (block_size - offset % block_size);
-               return second_offset + (idx - 1) * block_size;
+               auto second_piece_offset =
+                   offset + (block_size - offset % block_size);
+               return LogicalAddressRange(
+                   second_piece_offset + (idx - 1) * block_size, block_size);
              });
     }
   };

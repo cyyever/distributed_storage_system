@@ -55,13 +55,11 @@ namespace raid_fs {
 
     std::map<LogicalAddressRange, std::string>
     read(const std::set<LogicalAddressRange> &data_ranges) override {
-      auto raid_blocks =
-          concurrent_read(convert_logical_range_to_raid_blocks(data_ranges));
+      auto raid_blocks = concurrent_read(get_raid_block_no(data_ranges));
       std::map<LogicalAddressRange, std::string> results;
       for (auto const &range : data_ranges) {
-        auto [offset, length] = range;
         bool has_raid_block = true;
-        for (auto block_no : convert_logical_range_to_raid_blocks({range})) {
+        for (auto block_no : get_raid_block_no({range})) {
           if (!raid_blocks.contains(block_no)) {
             has_raid_block = false;
             break;
@@ -71,19 +69,12 @@ namespace raid_fs {
         if (!has_raid_block) {
           continue;
         }
-
-        uint64_t p = offset;
-        auto end_pos = offset + length;
-        auto partial_length = std::min(block_size, block_size - p % block_size);
-        assert(partial_length == block_size);
-        std::string result(raid_blocks[p / block_size].data(), partial_length);
-        p += partial_length;
-        length -= partial_length;
-        while (p < end_pos) {
-          partial_length = std::min(length, block_size - p % block_size);
-          result.append(raid_blocks[p / block_size].data(), partial_length);
-          p += block_size;
-          length -= partial_length;
+        std::string result;
+        result.reserve(range.length);
+        for (auto [offset, length] : range.split(block_size)) {
+          result.append(raid_blocks[offset / block_size].data() +
+                            offset % block_size,
+                        length);
         }
         results.emplace(range, std::move(result));
       }
@@ -106,8 +97,8 @@ namespace raid_fs {
       for (auto const &[data_offset, block] : blocks) {
         bool write_succ = std::ranges::all_of(
             LogicalAddressRange(data_offset, block.size()).split(block_size),
-            [&](const auto &offset) {
-              return raid_res.contains(offset / block_size);
+            [&](const auto &range) {
+              return raid_res.contains(range.offset / block_size);
             });
         if (write_succ) {
           block_result.insert(data_offset);
@@ -117,12 +108,12 @@ namespace raid_fs {
     }
 
   private:
-    std::set<uint64_t> convert_logical_range_to_raid_blocks(
-        const std::set<LogicalAddressRange> &data_ranges) {
+    std::set<uint64_t>
+    get_raid_block_no(const std::set<LogicalAddressRange> &data_ranges) {
       std::set<uint64_t> raid_block_no_set;
       for (auto const &range : data_ranges) {
-        for (auto offset : range.split(block_size)) {
-          raid_block_no_set.emplace(offset / block_size);
+        for (auto sub_range : range.split(block_size)) {
+          raid_block_no_set.emplace(sub_range.offset / block_size);
         }
       }
       return raid_block_no_set;
