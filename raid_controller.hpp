@@ -5,10 +5,12 @@
  */
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <expected>
 #include <map>
 #include <optional>
+#include <ranges>
 #include <set>
 
 #include <cyy/naive_lib/log/log.hpp>
@@ -16,6 +18,7 @@
 #include <grpcpp/create_channel.h>
 #include <spdlog/fmt/fmt.h>
 
+#include "block.hpp"
 #include "config.hpp"
 #include "raid.grpc.pb.h"
 namespace raid_fs {
@@ -100,16 +103,14 @@ namespace raid_fs {
       }
       auto raid_res = concurrent_write(raid_blocks);
       std::set<uint64_t> block_result;
-      for (auto const &[offset, block] : blocks) {
-        bool write_succ = true;
-        for (size_t p = offset; p < offset + block.size(); p += block_size) {
-          if (!raid_res.contains(p / block_size)) {
-            write_succ = false;
-            break;
-          }
-        }
+      for (auto const &[data_offset, block] : blocks) {
+        bool write_succ = std::ranges::all_of(
+            LogicalAddressRange(data_offset, block.size()).split(block_size),
+            [&](const auto &offset) {
+              return raid_res.contains(offset / block_size);
+            });
         if (write_succ) {
-          block_result.insert(offset);
+          block_result.insert(data_offset);
         }
       }
       return block_result;
@@ -119,9 +120,9 @@ namespace raid_fs {
     std::set<uint64_t> convert_logical_range_to_raid_blocks(
         const std::set<LogicalAddressRange> &data_ranges) {
       std::set<uint64_t> raid_block_no_set;
-      for (auto const &[offset, length] : data_ranges) {
-        for (uint64_t p = offset; p < offset + length; p += block_size) {
-          raid_block_no_set.emplace(p / block_size);
+      for (auto const &range : data_ranges) {
+        for (auto offset : range.split(block_size)) {
+          raid_block_no_set.emplace(offset / block_size);
         }
       }
       return raid_block_no_set;
