@@ -4,6 +4,7 @@
  * \brief Contains definitions of various blocks
  */
 #pragma once
+#include <cassert>
 #include <ranges>
 #include <span>
 #include <string>
@@ -24,16 +25,23 @@ namespace raid_fs {
 
     auto split(uint64_t block_size) const {
       auto block_count = (offset + length) / block_size - offset / block_size;
+      auto tmp_offset = offset;
+      auto tmp_length = length;
       return std::views::iota(uint64_t(0), block_count) |
-             std::views::transform([=, this](auto idx) {
-               auto first_piece_length = (block_size - offset % block_size);
+             std::views::transform([tmp_offset, tmp_length,
+                                    block_size](auto idx) {
+               auto first_piece_length =
+                   std::min(tmp_length, block_size - tmp_offset % block_size);
                if (idx == 0) {
-                 return LogicalAddressRange(offset, first_piece_length);
+                 return LogicalAddressRange(tmp_offset, first_piece_length);
                }
-               auto second_piece_offset =
-                   offset + (block_size - offset % block_size);
-               return LogicalAddressRange(
-                   second_piece_offset + (idx - 1) * block_size, block_size);
+               auto second_piece_offset = tmp_offset + first_piece_length;
+               /* assert(second_piece_offset % block_size == 0); */
+               auto piece_offset = second_piece_offset + (idx - 1) * block_size;
+               /* assert(piece_offset < tmp_offset + tmp_length); */
+               auto piece_length = std::min(
+                   block_size, (tmp_offset + tmp_length) - piece_offset);
+               return LogicalAddressRange(piece_offset, piece_length);
              });
     }
   };

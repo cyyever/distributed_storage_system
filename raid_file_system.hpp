@@ -778,25 +778,19 @@ namespace raid_fs {
     void iterate_bytes(size_t byte_offset, size_t length,
                        const std::function<std::pair<bool, bool>(
                            block_data_view_type data_view, size_t)> &callback) {
-      while (length) {
-        auto block_no = byte_offset / block_size;
+      LogicalAddressRange address_range(byte_offset,length);
+      for(auto [piece_offset,piece_length]:address_range.split(block_size)) {
+        auto block_no =piece_offset/ block_size;
         auto block = get_block(block_no);
-        auto block_offset = byte_offset % block_size;
-        auto block_length = block_size - block_offset;
-        if (block_length > length) {
-          block_length = length;
-        }
         auto [changed, finish] = callback(
-            block_data_view_type(&block->data[block_offset], block_length),
-            byte_offset);
+            block_data_view_type(&block->data[piece_offset%block_size],piece_length),
+            piece_offset);
         if (changed) {
           block_cache.emplace(block_no, block);
         }
         if (finish) {
           return;
         }
-        byte_offset += block_length;
-        length -= block_length;
       }
     }
     SuperBlock get_super_block() {

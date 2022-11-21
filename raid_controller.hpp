@@ -7,9 +7,7 @@
 
 #include <algorithm>
 #include <cassert>
-#include <expected>
 #include <map>
-#include <optional>
 #include <ranges>
 #include <set>
 
@@ -21,6 +19,7 @@
 #include "block.hpp"
 #include "config.hpp"
 #include "raid.grpc.pb.h"
+
 namespace raid_fs {
   class RAIDController {
   public:
