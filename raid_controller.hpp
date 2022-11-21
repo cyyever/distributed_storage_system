@@ -12,9 +12,9 @@
 #include <set>
 
 #include <cyy/naive_lib/log/log.hpp>
-#include <fmt/format.h>
 #include <grpcpp/client_context.h>
 #include <grpcpp/create_channel.h>
+#include <spdlog/fmt/fmt.h>
 
 #include "config.hpp"
 #include "raid.grpc.pb.h"
@@ -114,7 +114,6 @@ namespace raid_fs {
         }
       }
       return block_result;
-
     }
 
   private:

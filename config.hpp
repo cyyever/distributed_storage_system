@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include <fmt/format.h>
+#include <spdlog/fmt/fmt.h>
 
 #include <yaml-cpp/yaml.h>
 

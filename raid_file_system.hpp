@@ -7,7 +7,7 @@
 #pragma once
 #include <algorithm>
 #include <bit>
-#include <expected>>
+#include <expected>
 #include <functional>
 #include <ranges>
 #include <shared_mutex>
@@ -16,12 +16,12 @@
 
 #include <cyy/algorithm/dict/ordered_dict.hpp>
 #include <cyy/naive_lib/util/runnable.hpp>
-#include <fmt/format.h>
+#include <spdlog/fmt/fmt.h>
 
-#include "block.hpp"
 #include "block_cache.hpp"
 #include "config.hpp"
 #include "error.pb.h"
+#include "fs_block.hpp"
 #include "raid_controller.hpp"
 
 namespace raid_fs {
@@ -369,9 +369,10 @@ namespace raid_fs {
           }
         }
         LOG_WARN("allocate {} inodes and {} data blocks, total {} blocks, "
-                 "{} blocks for bookkeeping",
+                 "{} blocks for bookkeeping, effective disk capacity {} GB",
                  blk.inode_number, blk.data_block_number, block_number,
-                 block_number - blk.inode_number - blk.data_block_number);
+                 block_number - blk.inode_number - blk.data_block_number,
+                 block_number * block_size / 1024 / 1024 / 1024);
         // wrapped the above code in local scope such that the super block
         // changes are written to the cache now.
 

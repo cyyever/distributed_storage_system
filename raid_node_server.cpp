@@ -2,11 +2,11 @@
 
 #include <cyy/naive_lib/log/log.hpp>
 #include <cyy/naive_lib/util/error.hpp>
-#include <fmt/format.h>
 #include <grpc/grpc.h>
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
+#include <spdlog/fmt/fmt.h>
 
 #include "config.hpp"
 #include "disk.hpp"

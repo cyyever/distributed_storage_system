@@ -16,6 +16,7 @@ find_package(fmt CONFIG REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(CyyNaiveLib REQUIRED)
 find_package(Boost REQUIRED)
+find_package(range-v3 REQUIRED)
 find_package(CyyAlgorithmLib REQUIRED)
 
 if(USE_ASAN OR USE_UBSAN)
@@ -47,7 +48,16 @@ add_executable(
   ${error_proto_srcs} ${raid_grpc_srcs} ${raid_proto_srcs})
 
 set(LIBS gRPC::grpc++_unsecure yaml-cpp fmt::fmt CyyAlgorithmLib
-         CyyNaiveLib::log)
+         CyyNaiveLib::log range-v3)
+if(USE_ASAN)
+  list(APPEND LIBS GoogleSanitizer::address)
+endif()
+if(USE_UBSAN)
+  list(APPEND LIBS GoogleSanitizer::undefined)
+endif()
+if(USE_TSAN)
+  list(APPEND LIBS GoogleSanitizer::thread)
+endif()
 
 target_include_directories(fs_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(fs_server PUBLIC ${LIBS})
@@ -58,19 +68,6 @@ add_executable(
 
 target_include_directories(raid_node_server PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(raid_node_server PUBLIC ${LIBS})
-
-if(USE_ASAN)
-  target_link_libraries(fs_server PUBLIC GoogleSanitizer::address)
-  target_link_libraries(raid_node_server PUBLIC GoogleSanitizer::address)
-endif()
-if(USE_UBSAN)
-  target_link_libraries(fs_server PUBLIC GoogleSanitizer::undefined)
-  target_link_libraries(raid_node_server PUBLIC GoogleSanitizer::undefined)
-endif()
-if(USE_TSAN)
-  target_link_libraries(fs_server PUBLIC GoogleSanitizer::thread)
-  target_link_libraries(raid_node_server PUBLIC GoogleSanitizer::thread)
-endif()
 
 add_subdirectory(test)
 

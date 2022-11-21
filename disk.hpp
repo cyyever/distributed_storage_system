@@ -23,8 +23,8 @@
 #include <sys/types.h>
 #endif
 
+#include "block.hpp"
 #include "config.hpp"
-#include "type.hpp"
 
 namespace raid_fs {
 

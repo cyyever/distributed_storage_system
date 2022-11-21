@@ -9,7 +9,7 @@
 
 #include <cyy/algorithm/dict/lru_cache.hpp>
 
-#include "block.hpp"
+#include "fs_block.hpp"
 #include "raid_controller.hpp"
 namespace raid_fs {
   class BlockCacheBackend
@@ -51,12 +51,12 @@ namespace raid_fs {
       return results;
     }
 
-    std::optional<mapped_type> load_data(const key_type &block_no) override {
+    std::optional<mapped_type> load_data(const key_type &) override {
       throw std::runtime_error("shouldn't be called");
     }
     void clear() override {}
     void erase_data(const key_type &) override {}
-    bool save_data(const key_type &block_no, mapped_type block) override {
+    bool save_data(const key_type &, mapped_type) override {
       throw std::runtime_error("shouldn't be called");
     }
     std::vector<std::pair<key_type, bool>> batch_save_data(
