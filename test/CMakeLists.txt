@@ -13,8 +13,6 @@ foreach(test_source IN LISTS test_sources)
     ${test_prog} PRIVATE DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS)
   target_include_directories(${test_prog}
                              PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../")
-  target_link_libraries(
-    ${test_prog} PUBLIC gRPC::grpc++_unsecure yaml-cpp fmt::fmt
-                        CyyNaiveLib::log CyyNaiveLib::util)
+  target_link_libraries(${test_prog} PUBLIC ${LIBS})
   add_test_with_runtime_analysis(TARGET ${test_prog} HELGRIND OFF TSAN OFF)
 endforeach()

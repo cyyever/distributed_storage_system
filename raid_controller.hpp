@@ -27,10 +27,10 @@ namespace raid_fs {
     // data offset and length
     virtual ~RAIDController() = default;
     virtual size_t get_capacity() = 0;
-    virtual std::map<LogicalAddressRange, std::string>
+    virtual std::map<LogicalAddressRange, byte_stream_type>
     read(const std::set<LogicalAddressRange> &data_ranges) = 0;
     virtual std::set<uint64_t>
-    write(std::map<uint64_t, std::string> blocks) = 0;
+    write(std::map<uint64_t,byte_stream_type> blocks) = 0;
   };
   class RAID6Controller : public RAIDController {
   public:
@@ -53,10 +53,10 @@ namespace raid_fs {
     ~RAID6Controller() override = default;
     size_t get_capacity() override { return capacity; }
 
-    std::map<LogicalAddressRange, std::string>
+    std::map<LogicalAddressRange, byte_stream_type>
     read(const std::set<LogicalAddressRange> &data_ranges) override {
       auto raid_blocks = concurrent_read(get_raid_block_no(data_ranges));
-      std::map<LogicalAddressRange, std::string> results;
+      std::map<LogicalAddressRange,byte_stream_type> results;
       for (auto const &range : data_ranges) {
         bool has_raid_block = true;
         for (auto block_no : get_raid_block_no({range})) {
@@ -69,7 +69,7 @@ namespace raid_fs {
         if (!has_raid_block) {
           continue;
         }
-        std::string result;
+          byte_stream_type result;
         result.reserve(range.length);
         for (auto [offset, length] : range.split(block_size)) {
           result.append(raid_blocks[offset / block_size].data() +
@@ -80,7 +80,7 @@ namespace raid_fs {
       }
       return results;
     }
-    std::set<uint64_t> write(std::map<uint64_t, std::string> blocks) override {
+    std::set<uint64_t> write(std::map<uint64_t,byte_stream_type> blocks) override {
       std::map<uint64_t, std::string_view> raid_blocks;
       for (auto const &[offset, block] : blocks) {
         assert(offset % block_size == 0);
@@ -118,9 +118,9 @@ namespace raid_fs {
       }
       return raid_block_no_set;
     }
-    std::map<uint64_t, std::string>
+    std::map<uint64_t,byte_stream_type>
     concurrent_read(std::set<uint64_t> block_no_set) {
-      std::map<uint64_t, std::string> raid_blocks;
+      std::map<uint64_t,byte_stream_type> raid_blocks;
       grpc::CompletionQueue cq;
       while (!block_no_set.empty()) {
         std::set<uint64_t> new_block_no_set;
@@ -204,7 +204,7 @@ namespace raid_fs {
           auto physical_block_no = block_no / data_node_number;
           BlockWriteRequest request;
           request.set_block_no(physical_block_no);
-          request.set_block(std::string(raid_block));
+          request.set_block(byte_stream_type(raid_block));
 
           std::get<0>(reply_map[physical_node_no]) =
               data_stubs[physical_node_no]->AsyncWrite(
