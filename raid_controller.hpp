@@ -177,38 +177,44 @@ namespace raid_fs {
       return raid_blocks;
     }
 
+    std::map<uint64_t, std::map<uint64_t, std::string_view>>
+    convert_to_physical_nodes(
+        std::map<uint64_t, std::string_view> raid_blocks) {
+      std::map<uint64_t, std::map<uint64_t, std::string_view>> physical_blocks;
+      for (auto &[block_no, raid_block] : raid_blocks) {
+        auto physical_node_no = block_no % data_node_number;
+        auto physical_block_no = block_no / data_node_number;
+        physical_blocks[physical_block_no][physical_node_no] = raid_block;
+      }
+      return physical_blocks;
+    }
+
     std::set<uint64_t>
     concurrent_write(std::map<uint64_t, std::string_view> raid_blocks) {
       std::set<uint64_t> raid_results;
       grpc::CompletionQueue cq;
-      while (!raid_blocks.empty()) {
-        decltype(raid_blocks) new_raid_blocks;
+      auto physical_blocks = convert_to_physical_nodes(raid_blocks);
+      for (auto const &[physical_block_no, row_map] : physical_blocks) {
         std::map<uint64_t,
                  std::tuple<std::unique_ptr<grpc::ClientAsyncResponseReader<
                                 BlockWriteReply>>,
-                            BlockWriteReply, ::grpc::Status, uint64_t>>
+                            BlockWriteReply, ::grpc::Status>>
             reply_map;
         std::map<uint64_t, ::grpc::ClientContext> contexts;
 
-        for (auto &[block_no, raid_block] : raid_blocks) {
-          auto physical_node_no = block_no % data_node_number;
-          if (reply_map.contains(physical_node_no)) {
-            new_raid_blocks.emplace(block_no, raid_block);
-            continue;
-          }
-          auto physical_block_no = block_no / data_node_number;
+        for (auto &[physical_node_no, raid_block] : row_map) {
+          auto block_no =
+              physical_block_no * data_node_number + physical_node_no;
           BlockWriteRequest request;
           request.set_block_no(physical_block_no);
           request.set_block(byte_stream_type(raid_block));
 
-          std::get<0>(reply_map[physical_node_no]) =
+          std::get<0>(reply_map[block_no]) =
               data_stubs[physical_node_no]->AsyncWrite(
                   &contexts[physical_node_no], request, &cq);
-          std::get<3>(reply_map[physical_node_no]) = block_no;
-          std::get<0>(reply_map[physical_node_no])
-              ->Finish(&std::get<1>(reply_map[physical_node_no]),
-                       &std::get<2>(reply_map[physical_node_no]),
-                       (void *)physical_node_no);
+          std::get<0>(reply_map[block_no])
+              ->Finish(&std::get<1>(reply_map[block_no]),
+                       &std::get<2>(reply_map[block_no]), (void *)block_no);
         }
         while (!reply_map.empty()) {
           void *got_tag = nullptr;
@@ -216,14 +222,14 @@ namespace raid_fs {
           if (!cq.Next(&got_tag, &ok) || !ok) {
             throw std::runtime_error("cg next failed");
           }
-          auto physical_node_no = reinterpret_cast<uint64_t>(got_tag);
+          auto block_no = reinterpret_cast<uint64_t>(got_tag);
 
-          auto node = reply_map.extract(physical_node_no);
+          auto node = reply_map.extract(block_no);
           if (node.empty()) {
             throw std::runtime_error(
                 fmt::format("invalid grpc tag {}", got_tag));
           }
-          auto &[_, reply, grpc_status, block_no] = node.mapped();
+          auto &[_, reply, grpc_status] = node.mapped();
 
           if (!grpc_status.ok()) {
             LOG_ERROR("write block {} failed:{}", block_no,
@@ -236,7 +242,6 @@ namespace raid_fs {
           }
           raid_results.insert(block_no);
         }
-        raid_blocks = std::move(new_raid_blocks);
       }
       return raid_results;
     }
