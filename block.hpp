@@ -24,7 +24,7 @@ namespace raid_fs {
     bool operator==(const LogicalAddressRange &rhs) const = default;
 
     auto split(uint64_t block_size) const {
-      auto block_count = (offset + length) / block_size - offset / block_size;
+      auto block_count = (offset + length-1) / block_size - offset / block_size+1;
       auto tmp_offset = offset;
       auto tmp_length = length;
       return std::views::iota(uint64_t(0), block_count) |
@@ -36,9 +36,7 @@ namespace raid_fs {
                  return LogicalAddressRange(tmp_offset, first_piece_length);
                }
                auto second_piece_offset = tmp_offset + first_piece_length;
-               /* assert(second_piece_offset % block_size == 0); */
                auto piece_offset = second_piece_offset + (idx - 1) * block_size;
-               /* assert(piece_offset < tmp_offset + tmp_length); */
                auto piece_length = std::min(
                    block_size, (tmp_offset + tmp_length) - piece_offset);
                return LogicalAddressRange(piece_offset, piece_length);
