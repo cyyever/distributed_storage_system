@@ -76,6 +76,12 @@ namespace raid_fs {
       auto sub_yaml_node = yaml_node["RAID6"];
       auto port = sub_yaml_node["first_node_port"].as<uint16_t>();
       auto data_node_number = sub_yaml_node["data_node_number"].as<size_t>();
+      if (data_node_number < 2 && data_node_number > 255) {
+        throw std::invalid_argument(
+            fmt::format("data node number must be between 2 and "
+                        "255, but got invalid value {}",
+                        data_node_number));
+      }
       for (size_t i = 0; i < data_node_number; i++, port++) {
         data_ports.emplace_back(port);
       }

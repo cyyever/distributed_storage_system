@@ -40,7 +40,8 @@ namespace raid_fs {
                         const ::raid_fs::ReadRequest *request,
                         ::raid_fs::ReadReply *response) override {
       auto res_or_error =
-          raid_fs.read(request->fd(), request->offset(), request->count());
+          raid_fs.read(request->fd(), LogicalAddressRange(request->offset(),
+                                                          request->count()));
       if (!res_or_error.has_value()) {
         response->set_error(res_or_error.error());
       } else {

@@ -12,14 +12,15 @@
 
 namespace raid_fs {
   using byte_stream_type = std::string;
-  using block_data_type = std::string;
+  using const_byte_stream_view_type = std::string_view;
+  using block_data_type = byte_stream_type;
   using block_data_view_type = std::span<char>;
-  using const_block_data_view_type = std::span<const char>;
+  using const_block_data_view_type = const_byte_stream_view_type;
 
   // data offset and length
   struct LogicalAddressRange {
-    uint64_t offset;
-    uint64_t length;
+    uint64_t offset{};
+    uint64_t length{};
     auto operator<=>(const LogicalAddressRange &rhs) const = default;
     bool operator==(const LogicalAddressRange &rhs) const = default;
 
