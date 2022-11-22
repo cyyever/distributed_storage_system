@@ -11,8 +11,10 @@ foreach(test_source IN LISTS test_sources)
                              PRIVATE DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN)
   target_compile_definitions(
     ${test_prog} PRIVATE DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS)
-  target_include_directories(${test_prog}
-                             PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../")
+  message(STATUS ${CMAKE_CURRENT_BINARY_DIR}/../src)
+  target_include_directories(
+    ${test_prog} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/.."
+                         "${CMAKE_CURRENT_LIST_DIR}/../src")
   target_link_libraries(${test_prog} PUBLIC ${LIBS})
   add_test_with_runtime_analysis(TARGET ${test_prog} HELGRIND OFF TSAN OFF)
 endforeach()

@@ -13,8 +13,8 @@
 #include <grpcpp/create_channel.h>
 #include <grpcpp/security/credentials.h>
 
-#include "../block.hpp"
-#include "../config.hpp"
+#include "block.hpp"
+#include "config.hpp"
 #include "fs.grpc.pb.h"
 
 TEST_CASE("file_system") {
