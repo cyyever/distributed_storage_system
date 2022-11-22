@@ -29,6 +29,62 @@ namespace raid_fs {
     read(const std::set<LogicalAddressRange> &data_ranges) = 0;
     virtual std::set<uint64_t>
     write(std::map<uint64_t, byte_stream_type> blocks) = 0;
+
+  protected:
+    std::set<uint64_t> write_raid_row(
+        const std::vector<std::unique_ptr<RAIDNode::Stub>> &data_stubs,
+        uint64_t physical_block_no,
+        std::map<uint64_t, std::string_view> row_blocks) {
+      std::set<uint64_t> raid_results;
+      grpc::CompletionQueue cq;
+      std::map<
+          uint64_t,
+          std::tuple<
+              std::unique_ptr<grpc::ClientAsyncResponseReader<BlockWriteReply>>,
+              BlockWriteReply, ::grpc::Status, ::grpc::ClientContext>>
+          reply_map;
+
+      for (auto &[physical_node_no, raid_block] : row_blocks) {
+        BlockWriteRequest request;
+        request.set_block_no(physical_block_no);
+        request.set_block(byte_stream_type(raid_block));
+
+        std::get<0>(reply_map[physical_node_no]) =
+            data_stubs[physical_node_no]->AsyncWrite(
+                &std::get<3>(reply_map[physical_node_no]), request, &cq);
+        std::get<0>(reply_map[physical_node_no])
+            ->Finish(&std::get<1>(reply_map[physical_node_no]),
+                     &std::get<2>(reply_map[physical_node_no]),
+                     (void *)physical_node_no);
+      }
+      while (!reply_map.empty()) {
+        void *got_tag = nullptr;
+        bool ok = false;
+        if (!cq.Next(&got_tag, &ok) || !ok) {
+          throw std::runtime_error("cg next failed");
+        }
+        auto physical_node_no = reinterpret_cast<uint64_t>(got_tag);
+
+        auto node = reply_map.extract(physical_node_no);
+        if (node.empty()) {
+          throw std::runtime_error(fmt::format("invalid grpc tag {}", got_tag));
+        }
+        auto &[_, reply, grpc_status, __] = node.mapped();
+
+        if (!grpc_status.ok()) {
+          LOG_ERROR("write block {} failed:{}", physical_node_no,
+                    grpc_status.error_message());
+          continue;
+        }
+        if (reply.has_error()) {
+          LOG_ERROR("write block {} failed:{}", physical_node_no,
+                    reply.error());
+          continue;
+        }
+        raid_results.insert(physical_node_no);
+      }
+      return raid_results;
+    }
   };
   class RAID6Controller : public RAIDController {
   public:
@@ -195,52 +251,10 @@ namespace raid_fs {
       grpc::CompletionQueue cq;
       auto physical_blocks = convert_to_physical_nodes(raid_blocks);
       for (auto const &[physical_block_no, row_map] : physical_blocks) {
-        std::map<uint64_t,
-                 std::tuple<std::unique_ptr<grpc::ClientAsyncResponseReader<
-                                BlockWriteReply>>,
-                            BlockWriteReply, ::grpc::Status>>
-            reply_map;
-        std::map<uint64_t, ::grpc::ClientContext> contexts;
-
-        for (auto &[physical_node_no, raid_block] : row_map) {
-          auto block_no =
-              physical_block_no * data_node_number + physical_node_no;
-          BlockWriteRequest request;
-          request.set_block_no(physical_block_no);
-          request.set_block(byte_stream_type(raid_block));
-
-          std::get<0>(reply_map[block_no]) =
-              data_stubs[physical_node_no]->AsyncWrite(
-                  &contexts[physical_node_no], request, &cq);
-          std::get<0>(reply_map[block_no])
-              ->Finish(&std::get<1>(reply_map[block_no]),
-                       &std::get<2>(reply_map[block_no]), (void *)block_no);
-        }
-        while (!reply_map.empty()) {
-          void *got_tag = nullptr;
-          bool ok = false;
-          if (!cq.Next(&got_tag, &ok) || !ok) {
-            throw std::runtime_error("cg next failed");
-          }
-          auto block_no = reinterpret_cast<uint64_t>(got_tag);
-
-          auto node = reply_map.extract(block_no);
-          if (node.empty()) {
-            throw std::runtime_error(
-                fmt::format("invalid grpc tag {}", got_tag));
-          }
-          auto &[_, reply, grpc_status] = node.mapped();
-
-          if (!grpc_status.ok()) {
-            LOG_ERROR("write block {} failed:{}", block_no,
-                      grpc_status.error_message());
-            continue;
-          }
-          if (reply.has_error()) {
-            LOG_ERROR("write block {} failed:{}", block_no, reply.error());
-            continue;
-          }
-          raid_results.insert(block_no);
+        auto row_res = write_raid_row(data_stubs, physical_block_no, row_map);
+        for (auto physical_node_no : row_res) {
+          raid_results.insert(physical_block_no * data_node_number +
+                              physical_node_no);
         }
       }
       return raid_results;
