@@ -87,7 +87,7 @@ namespace raid_fs {
     std::set<uint64_t>
     write_raid_row(const std::vector<std::unique_ptr<RAIDNode::Stub>> &stubs,
                    uint64_t physical_block_no,
-                   std::map<uint64_t, std::string_view> row_blocks) {
+                   std::map<uint64_t, const_byte_stream_view_type> row_blocks) {
       std::set<uint64_t> raid_results;
       grpc::CompletionQueue cq;
       std::map<
@@ -154,7 +154,7 @@ namespace raid_fs {
       auto channel = grpc::CreateChannel(
           fmt::format("localhost:{}", raid_config.parity_ports[0]),
           ::grpc::InsecureChannelCredentials());
-      P_stub_idx = stubs.size();
+      P_node_idx = stubs.size();
       stubs.emplace_back(RAIDNode::NewStub(channel));
       channel = grpc::CreateChannel(
           fmt::format("localhost:{}", raid_config.parity_ports[1]),
@@ -190,15 +190,15 @@ namespace raid_fs {
     }
     std::set<uint64_t>
     write(std::map<uint64_t, byte_stream_type> blocks) override {
-      std::map<uint64_t, std::string_view> raid_blocks;
+      std::map<uint64_t, const_byte_stream_view_type> raid_blocks;
       for (auto const &[offset, block] : blocks) {
         assert(offset % block_size == 0);
         assert(!block.empty());
         assert(block.size() % block_size == 0);
         for (size_t p = offset; p < offset + block.size(); p += block_size) {
-          raid_blocks.emplace(
-              p / block_size,
-              std::string_view{block.data() + p - offset, block_size});
+          raid_blocks.emplace(p / block_size,
+                              const_byte_stream_view_type{
+                                  block.data() + p - offset, block_size});
         }
       }
       auto raid_res = write_blocks(raid_blocks);
@@ -254,10 +254,11 @@ namespace raid_fs {
       return raid_blocks;
     }
 
-    std::map<uint64_t, std::map<uint64_t, std::string_view>>
+    std::map<uint64_t, std::map<uint64_t, const_byte_stream_view_type>>
     convert_to_physical_nodes(
-        std::map<uint64_t, std::string_view> raid_blocks) {
-      std::map<uint64_t, std::map<uint64_t, std::string_view>> physical_blocks;
+        std::map<uint64_t, const_byte_stream_view_type> raid_blocks) {
+      std::map<uint64_t, std::map<uint64_t, const_byte_stream_view_type>>
+          physical_blocks;
       for (auto &[block_no, raid_block] : raid_blocks) {
         auto physical_node_no = block_no % data_node_number;
         auto physical_block_no = block_no / data_node_number;
@@ -266,17 +267,39 @@ namespace raid_fs {
       return physical_blocks;
     }
 
+    void xor_blocks(block_data_type &block,
+                    const_byte_stream_view_type rhs_block) {
+      assert(block.size() == rhs_block.size());
+      auto data_ptr = reinterpret_cast<std::byte *>(block.data());
+      auto rhs_data_ptr = reinterpret_cast<const std::byte *>(rhs_block.data());
+      for (size_t i = 0; i < block.size(); i++) {
+        data_ptr[i] ^= rhs_data_ptr[i];
+      }
+    }
+
     std::set<uint64_t>
-    write_blocks(std::map<uint64_t, std::string_view> raid_blocks) {
+    write_blocks(std::map<uint64_t, const_byte_stream_view_type> raid_blocks) {
       std::set<uint64_t> raid_results;
       grpc::CompletionQueue cq;
       auto physical_blocks = convert_to_physical_nodes(raid_blocks);
-      for (auto const &[physical_block_no, row_map] : physical_blocks) {
+      for (auto &[physical_block_no, row_map] : physical_blocks) {
         std::map<uint64_t, uint64_t> block_locations;
         for (auto const &[physical_node_no, _] : row_map) {
           block_locations.emplace(physical_node_no, physical_block_no);
         }
-        /* auto read_res = parallel_read_blocks(block_locations); */
+        block_locations.emplace(P_node_idx, physical_block_no);
+        auto read_res = parallel_read_blocks(stubs, block_locations);
+        // write P and Q
+        std::optional<block_data_type> P_block_opt;
+        if (read_res.size() == block_locations.size()) {
+          P_block_opt = std::move(read_res[P_node_idx]);
+          for (auto const &[physical_node_no, block] : read_res) {
+            if (physical_block_no != P_node_idx) {
+              xor_blocks(P_block_opt.value(), block);
+            }
+          }
+          row_map[P_node_idx]=P_block_opt.value();
+        }
         auto row_res = write_raid_row(stubs, physical_block_no, row_map);
         for (auto physical_node_no : row_res) {
           raid_results.insert(physical_block_no * data_node_number +
@@ -289,7 +312,7 @@ namespace raid_fs {
   private:
     std::vector<std::unique_ptr<RAIDNode::Stub>> stubs;
     size_t data_node_number{};
-    size_t P_stub_idx{};
+    size_t P_node_idx{};
     size_t Q_stub_idx{};
     size_t capacity{};
     size_t block_size{};
