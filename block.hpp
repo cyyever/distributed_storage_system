@@ -18,8 +18,8 @@ namespace raid_fs {
 
   // data offset and length
   struct LogicalAddressRange {
-    uint64_t offset;
-    uint64_t length;
+    uint64_t offset{};
+    uint64_t length{};
     auto operator<=>(const LogicalAddressRange &rhs) const = default;
     bool operator==(const LogicalAddressRange &rhs) const = default;
 
