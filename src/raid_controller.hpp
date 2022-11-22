@@ -18,6 +18,7 @@
 
 #include "block.hpp"
 #include "config.hpp"
+#include "galois_field.hpp"
 #include "raid.grpc.pb.h"
 
 namespace raid_fs {
