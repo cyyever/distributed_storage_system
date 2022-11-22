@@ -154,12 +154,12 @@ namespace raid_fs {
       auto channel = grpc::CreateChannel(
           fmt::format("localhost:{}", raid_config.parity_ports[0]),
           ::grpc::InsecureChannelCredentials());
-      P_node_idx = stubs.size();
+      P_node_idx_opt = stubs.size();
       stubs.emplace_back(RAIDNode::NewStub(channel));
       channel = grpc::CreateChannel(
           fmt::format("localhost:{}", raid_config.parity_ports[1]),
           ::grpc::InsecureChannelCredentials());
-      Q_stub_idx = stubs.size();
+      Q_node_idx_opt = stubs.size();
       stubs.emplace_back(RAIDNode::NewStub(channel));
     }
     ~RAID6Controller() override = default;
@@ -284,21 +284,49 @@ namespace raid_fs {
       auto physical_blocks = convert_to_physical_nodes(raid_blocks);
       for (auto &[physical_block_no, row_map] : physical_blocks) {
         std::map<uint64_t, uint64_t> block_locations;
-        for (auto const &[physical_node_no, _] : row_map) {
-          block_locations.emplace(physical_node_no, physical_block_no);
-        }
-        block_locations.emplace(P_node_idx, physical_block_no);
-        auto read_res = parallel_read_blocks(stubs, block_locations);
-        // write P and Q
-        std::optional<block_data_type> P_block_opt;
-        if (read_res.size() == block_locations.size()) {
-          P_block_opt = std::move(read_res[P_node_idx]);
-          for (auto const &[physical_node_no, block] : read_res) {
-            if (physical_block_no != P_node_idx) {
-              xor_blocks(P_block_opt.value(), block);
+        if (P_node_idx_opt.has_value() || Q_node_idx_opt.has_value()) {
+          for (auto const &[physical_node_no, _] : row_map) {
+            block_locations.emplace(physical_node_no, physical_block_no);
+          }
+          if (P_node_idx_opt.has_value()) {
+            block_locations.emplace(P_node_idx_opt.value(), physical_block_no);
+          }
+          if (Q_node_idx_opt.has_value()) {
+            block_locations.emplace(Q_node_idx_opt.value(), physical_block_no);
+          }
+          auto read_res = parallel_read_blocks(stubs, block_locations);
+          // write P and Q
+          std::optional<block_data_type> P_block_opt;
+          std::optional<block_data_type> Q_block_opt;
+          if (read_res.size() == block_locations.size()) {
+            if (P_node_idx_opt.has_value()) {
+              P_block_opt = std::move(read_res[P_node_idx_opt.value()]);
+              for (auto const &[physical_node_no, block] : read_res) {
+                if (physical_block_no != P_node_idx_opt.value()) {
+                  xor_blocks(P_block_opt.value(), block);
+                }
+              }
+              row_map[P_node_idx_opt.value()] = P_block_opt.value();
+            }
+            if (Q_node_idx_opt.has_value()) {
+              Q_block_opt = std::move(read_res[Q_node_idx_opt.value()]);
+              for (auto const &[physical_node_no, block] : read_res) {
+                if (physical_block_no != Q_node_idx_opt.value()) {
+                  xor_blocks(Q_block_opt.value(), block);
+                }
+              }
+              row_map[Q_node_idx_opt.value()] = Q_block_opt.value();
+            }
+          } else {
+            if (P_node_idx_opt.has_value() &&
+                !read_res.contains(P_node_idx_opt.value())) {
+              P_node_idx_opt.reset();
+            }
+            if (Q_node_idx_opt.has_value() &&
+                !read_res.contains(Q_node_idx_opt.value())) {
+              Q_node_idx_opt.reset();
             }
           }
-          row_map[P_node_idx]=P_block_opt.value();
         }
         auto row_res = write_raid_row(stubs, physical_block_no, row_map);
         for (auto physical_node_no : row_res) {
@@ -312,8 +340,11 @@ namespace raid_fs {
   private:
     std::vector<std::unique_ptr<RAIDNode::Stub>> stubs;
     size_t data_node_number{};
-    size_t P_node_idx{};
-    size_t Q_stub_idx{};
+    std::optional<size_t> P_node_idx_opt{};
+    std::optional<size_t> Q_node_idx_opt{};
+    /* size_t Q_node_idx{}; */
+    /* bool P_stale{false}; */
+    /* bool Q_stale{false}; */
     size_t capacity{};
     size_t block_size{};
   };
