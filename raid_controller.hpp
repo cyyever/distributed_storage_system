@@ -32,7 +32,7 @@ namespace raid_fs {
 
   protected:
     std::map<uint64_t, byte_stream_type> parallel_read_blocks(
-        const std::vector<std::unique_ptr<RAIDNode::Stub>> &data_stubs,
+        const std::vector<std::unique_ptr<RAIDNode::Stub>> &stubs,
         const std::map<uint64_t, uint64_t> &block_locations) {
       std::map<uint64_t, byte_stream_type> raid_blocks;
       grpc::CompletionQueue cq;
@@ -48,7 +48,7 @@ namespace raid_fs {
         request.set_block_no(physical_block_no);
 
         std::get<0>(reply_map[physical_node_no]) =
-            data_stubs[physical_node_no]->AsyncRead(
+            stubs[physical_node_no]->AsyncRead(
                 &std::get<3>(reply_map[physical_node_no]), request, &cq);
         std::get<0>(reply_map[physical_node_no])
             ->Finish(&std::get<1>(reply_map[physical_node_no]),
@@ -84,10 +84,10 @@ namespace raid_fs {
       return raid_blocks;
     }
 
-    std::set<uint64_t> write_raid_row(
-        const std::vector<std::unique_ptr<RAIDNode::Stub>> &data_stubs,
-        uint64_t physical_block_no,
-        std::map<uint64_t, std::string_view> row_blocks) {
+    std::set<uint64_t>
+    write_raid_row(const std::vector<std::unique_ptr<RAIDNode::Stub>> &stubs,
+                   uint64_t physical_block_no,
+                   std::map<uint64_t, std::string_view> row_blocks) {
       std::set<uint64_t> raid_results;
       grpc::CompletionQueue cq;
       std::map<
@@ -103,7 +103,7 @@ namespace raid_fs {
         request.set_block(byte_stream_type(raid_block));
 
         std::get<0>(reply_map[physical_node_no]) =
-            data_stubs[physical_node_no]->AsyncWrite(
+            stubs[physical_node_no]->AsyncWrite(
                 &std::get<3>(reply_map[physical_node_no]), request, &cq);
         std::get<0>(reply_map[physical_node_no])
             ->Finish(&std::get<1>(reply_map[physical_node_no]),
@@ -149,13 +149,18 @@ namespace raid_fs {
         auto channel =
             grpc::CreateChannel(fmt::format("localhost:{}", port),
                                 ::grpc::InsecureChannelCredentials());
-        data_stubs.emplace_back(RAIDNode::NewStub(channel));
+        stubs.emplace_back(RAIDNode::NewStub(channel));
       }
       auto channel = grpc::CreateChannel(
           fmt::format("localhost:{}", raid_config.parity_ports[0]),
           ::grpc::InsecureChannelCredentials());
-      P_stub = RAIDNode::NewStub(channel);
-      Q_stub = RAIDNode::NewStub(channel);
+      P_stub_idx = stubs.size();
+      stubs.emplace_back(RAIDNode::NewStub(channel));
+      channel = grpc::CreateChannel(
+          fmt::format("localhost:{}", raid_config.parity_ports[1]),
+          ::grpc::InsecureChannelCredentials());
+      Q_stub_idx = stubs.size();
+      stubs.emplace_back(RAIDNode::NewStub(channel));
     }
     ~RAID6Controller() override = default;
     size_t get_capacity() override { return capacity; }
@@ -196,7 +201,7 @@ namespace raid_fs {
               std::string_view{block.data() + p - offset, block_size});
         }
       }
-      auto raid_res = concurrent_write(raid_blocks);
+      auto raid_res = write_blocks(raid_blocks);
       std::set<uint64_t> block_result;
       for (auto const &[data_offset, block] : blocks) {
         bool write_succ = std::ranges::all_of(
@@ -239,7 +244,7 @@ namespace raid_fs {
           }
           block_locations[physical_node_no] = physical_block_no;
         }
-        auto res = parallel_read_blocks(data_stubs, block_locations);
+        auto res = parallel_read_blocks(stubs, block_locations);
         for (auto &[physical_node_no, block] : res) {
           raid_blocks[block_locations[physical_node_no] * data_node_number +
                       physical_node_no] = std::move(block);
@@ -262,12 +267,17 @@ namespace raid_fs {
     }
 
     std::set<uint64_t>
-    concurrent_write(std::map<uint64_t, std::string_view> raid_blocks) {
+    write_blocks(std::map<uint64_t, std::string_view> raid_blocks) {
       std::set<uint64_t> raid_results;
       grpc::CompletionQueue cq;
       auto physical_blocks = convert_to_physical_nodes(raid_blocks);
       for (auto const &[physical_block_no, row_map] : physical_blocks) {
-        auto row_res = write_raid_row(data_stubs, physical_block_no, row_map);
+        std::map<uint64_t, uint64_t> block_locations;
+        for (auto const &[physical_node_no, _] : row_map) {
+          block_locations.emplace(physical_node_no, physical_block_no);
+        }
+        /* auto read_res = parallel_read_blocks(block_locations); */
+        auto row_res = write_raid_row(stubs, physical_block_no, row_map);
         for (auto physical_node_no : row_res) {
           raid_results.insert(physical_block_no * data_node_number +
                               physical_node_no);
@@ -277,10 +287,10 @@ namespace raid_fs {
     }
 
   private:
-    std::vector<std::unique_ptr<RAIDNode::Stub>> data_stubs;
-    std::unique_ptr<RAIDNode::Stub> P_stub;
-    std::unique_ptr<RAIDNode::Stub> Q_stub;
+    std::vector<std::unique_ptr<RAIDNode::Stub>> stubs;
     size_t data_node_number{};
+    size_t P_stub_idx{};
+    size_t Q_stub_idx{};
     size_t capacity{};
     size_t block_size{};
   };
