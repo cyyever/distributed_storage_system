@@ -32,6 +32,7 @@ namespace raid_fs::galois_field {
     // Obtain additive inverse
     Element operator-() const { return *this; }
     Element &operator+=(const const_byte_stream_view_type &rhs) {
+      assert(rhs.size() > 0);
       if (byte_vector.size() != rhs.size()) {
         LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
                   byte_vector.size(), rhs.size());
@@ -62,6 +63,7 @@ namespace raid_fs::galois_field {
     // +=(rhs*scalar)
     Element &multiply_add(const const_byte_stream_view_type &rhs,
                           uint8_t scalar) {
+      assert(byte_vector.size() == rhs.size());
       if (byte_vector.size() != rhs.size()) {
         LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
                   byte_vector.size(), rhs.size());
@@ -135,7 +137,7 @@ namespace raid_fs::galois_field {
         }
       }
       uint8_t get_inverse(uint8_t a) const {
-        assert(a!=0);
+        assert(a != 0);
         return table[a];
       }
 

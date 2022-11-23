@@ -386,13 +386,16 @@ namespace raid_fs {
 
             auto it = failed_row_data_nodes.begin();
             int x = *it;
-            int y = *(++it);
+            it++;
+            int y = *it;
+            LOG_DEBUG("process failed nodes {} {}",x,y);
 
             galois_field::Element P_block(row_block_views[P_node_idx]);
             galois_field::Element Q_block(row_block_views[Q_node_idx]);
 
             galois_field::Element P_xy_block(block_size);
             galois_field::Element Q_xy_block(block_size);
+            LOG_DEBUG("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
             size_t cnt = 0;
             for (auto &[physical_node_no, block_view] : row_block_views) {
@@ -407,25 +410,28 @@ namespace raid_fs {
                         physical_node_no));
               }
             }
+            LOG_DEBUG("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
             assert(cnt + 2 == data_node_number);
-            auto tmp_power= galois_field::Element::generator_power_table.get_power(y - x);
-            auto x_block=((Q_block + Q_xy_block) *
-                    galois_field::Element::generator_power_table
-                        .get_negative_power(-x) +
-                (P_block + P_xy_block) *tmp_power
-                    ) *  galois_field::Element::multiply_inverse_table.get_inverse(
+            auto tmp_power =
+                galois_field::Element::generator_power_table.get_power(y - x);
+            LOG_DEBUG("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+            auto x_block =
+                ((Q_block + Q_xy_block) *
+                     galois_field::Element::generator_power_table
+                         .get_negative_power(-x) +
+                 (P_block + P_xy_block) * tmp_power) *
+                galois_field::Element::multiply_inverse_table.get_inverse(
+                    galois_field::Element::byte_addition(tmp_power, 1));
+            LOG_DEBUG("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
-               galois_field::Element::       byte_addition(tmp_power,1));
+            auto y_block = P_block + P_xy_block + x_block;
 
-            auto y_block=P_block+P_xy_block+x_block;
-
+            LOG_DEBUG("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
             assert(!read_raid_blocks.contains(x));
-            read_raid_blocks[x] =
-                std::move(x_block.get_byte_vector());
+            read_raid_blocks[x] = std::move(x_block.get_byte_vector());
             assert(!read_raid_blocks.contains(y));
-            read_raid_blocks[y] =
-                std::move(y_block.get_byte_vector());
+            read_raid_blocks[y] = std::move(y_block.get_byte_vector());
             continue;
           }
           // can't recover
@@ -460,7 +466,8 @@ namespace raid_fs {
         std::optional<block_data_type> P_block_opt;
         std::optional<block_data_type> Q_block_opt;
         if (!invalid_P_node || !invalid_Q_node) {
-          for (auto const &[physical_node_no, _] : row_map) {
+          for (auto const &[physical_node_no, v] : row_map) {
+            assert(!v.empty());
             block_locations.emplace(physical_node_no, physical_block_no);
             row_data_nodes.insert(physical_node_no);
           }
@@ -488,12 +495,17 @@ namespace raid_fs {
             if (!invalid_P_node && old_blocks.contains(P_node_idx)) {
               galois_field::Element sum(
                   byte_stream_view_type(old_blocks[P_node_idx]));
-              for (auto const &[physical_node_no, old_block] : old_blocks) {
+              for (auto const &[physical_node_no, block] : row_map) {
                 if (physical_node_no != P_node_idx &&
                     physical_node_no != Q_node_idx) {
+                  assert(!block.empty());
+                  auto const &old_block=old_blocks[physical_node_no];
                   assert(!old_block.empty());
+                  /* if(!row_map.contains(physical_node_no)) { */
+                  /*   LOG_ERROR("row map has no {}",physical_node_no); */
+                  /* } */
                   sum -= old_block;
-                  sum += row_map[physical_node_no];
+                  sum +=block;
                 }
               }
               P_block_opt = std::move(sum.get_byte_vector());
@@ -502,16 +514,18 @@ namespace raid_fs {
             if (!invalid_Q_node && old_blocks.contains(Q_node_idx)) {
               galois_field::Element sum(
                   byte_stream_view_type(old_blocks[Q_node_idx]));
-              for (auto const &[physical_node_no, old_block] : old_blocks) {
+              for (auto const &[physical_node_no, block] : row_map) {
                 if (physical_node_no != P_node_idx &&
                     physical_node_no != Q_node_idx) {
+                  assert(!block.empty());
+                  auto const &old_block=old_blocks[physical_node_no];
                   assert(!old_block.empty());
                   sum.multiply_subtract(
                       old_block,
                       galois_field::Element::generator_power_table.get_power(
                           physical_node_no));
                   sum.multiply_add(
-                      row_map[physical_node_no],
+                      block,
                       galois_field::Element::generator_power_table.get_power(
                           physical_node_no));
                 }
