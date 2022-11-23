@@ -26,6 +26,12 @@ namespace raid_fs::galois_field {
     // Since additive inverse is itself under XOR, subtraction is the same as
     // addition
     Element &operator-=(const Element &rhs) { return operator+=(rhs); }
+    void multiply_by_2() {
+      auto data_ptr = reinterpret_cast<uint8_t *>(byte_vector.data());
+      for (size_t i = 0; i < byte_vector.size(); i++) {
+        data_ptr[i] = byte_multiply_by_2(data_ptr[i]);
+      }
+    }
 
     static uint8_t byte_multiply_by_2(uint8_t b) {
       return (b << 1) ^ ((b & 0x80) ? 0x1d : 0);
