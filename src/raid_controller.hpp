@@ -328,30 +328,71 @@ namespace raid_fs {
             Q_node_avaiable = false;
           }
         }
+        auto failed_row_data_nodes = failed_row_nodes;
+        failed_row_data_nodes.erase(P_node_idx);
+        failed_row_data_nodes.erase(Q_node_idx);
 
-        if (failed_row_nodes.size() == 1) {
-          assert(!row_block_views[P_node_idx].empty());
-          byte_stream_type P_block(row_block_views[P_node_idx].data(),
-                                   row_block_views[P_node_idx].size());
-          galois_field::Element sum(P_block);
-          for (auto &[_, block_view] : row_block_views) {
-            assert(!block_view.empty());
-            sum -= block_view;
-          }
-          auto failed_physical_node_no = (*failed_row_nodes.begin());
-          assert(!read_raid_blocks.contains(failed_physical_node_no));
-          assert(block_locations.contains(failed_physical_node_no));
-          read_raid_blocks[failed_physical_node_no] = std::move(P_block);
-          assert(!read_raid_blocks[failed_physical_node_no].empty());
-          LOG_INFO("recover block {}", failed_physical_node_no);
-        } else {
-          LOG_ERROR("can't recover for row {},failed node number {}",
-                    failed_physical_block_no, failed_row_nodes.size());
-          // can't recover
-          if (P_node_avaiable && Q_node_avaiable) {
+        if (failed_row_data_nodes.size() == 1) {
+          if (P_node_avaiable) {
+            assert(!row_block_views[P_node_idx].empty());
+            byte_stream_type P_block(row_block_views[P_node_idx].data(),
+                                     row_block_views[P_node_idx].size());
+            galois_field::Element sum(P_block);
+            size_t cnt = 0;
+            for (auto &[physical_node_no, block_view] : row_block_views) {
+              if (physical_node_no != Q_node_idx &&
+                  physical_node_no != P_node_idx) {
+                assert(!block_view.empty());
+                sum -= block_view;
+                cnt++;
+              }
+            }
+            assert(cnt + 1 == data_node_number);
+            auto failed_physical_node_no = (*failed_row_data_nodes.begin());
+            assert(!read_raid_blocks.contains(failed_physical_node_no));
+            assert(block_locations.contains(failed_physical_node_no));
+            read_raid_blocks[failed_physical_node_no] = std::move(P_block);
+            assert(!read_raid_blocks[failed_physical_node_no].empty());
+            LOG_INFO("recover block {}", failed_physical_node_no);
             continue;
           }
+
+          if (Q_node_avaiable) {
+            assert(Q_node_avaiable);
+            assert(!row_block_views[Q_node_idx].empty());
+            byte_stream_type Q_block(row_block_views[Q_node_idx].data(),
+                                     row_block_views[Q_node_idx].size());
+            galois_field::Element sum(Q_block);
+            size_t cnt = 0;
+            for (auto &[physical_node_no, block_view] : row_block_views) {
+              if (physical_node_no != Q_node_idx &&
+                  physical_node_no != P_node_idx) {
+                assert(!block_view.empty());
+                cnt++;
+                sum.multiply_subtract(
+                    block_view,
+                    galois_field::Element::generator_power_table.get_power(
+                        physical_node_no));
+              }
+            }
+            assert(cnt + 1 == data_node_number);
+            auto failed_physical_node_no = (*failed_row_data_nodes.begin());
+            assert(!read_raid_blocks.contains(failed_physical_node_no));
+            assert(block_locations.contains(failed_physical_node_no));
+            read_raid_blocks[failed_physical_node_no] = std::move(Q_block);
+            assert(!read_raid_blocks[failed_physical_node_no].empty());
+            LOG_INFO("recover block {} from Q node", failed_physical_node_no);
+            continue;
+          }
+        } else if (failed_row_data_nodes.size() == 2) {
+          if (P_node_avaiable && Q_node_avaiable) {
+
+            continue;
+          }
+          // can't recover
         }
+        LOG_ERROR("can't recover for row {},failed node number {}",
+                  failed_physical_block_no, failed_row_nodes.size());
       }
     }
 
@@ -391,6 +432,14 @@ namespace raid_fs {
             block_locations.emplace(Q_node_idx, physical_block_no);
           }
           auto old_blocks = parallel_read_blocks(stubs, block_locations);
+          if (!old_blocks.contains(P_node_idx)) {
+            invalid_P_node = true;
+            block_locations.erase(P_node_idx);
+          }
+          if (!old_blocks.contains(Q_node_idx)) {
+            invalid_Q_node = true;
+            block_locations.erase(Q_node_idx);
+          }
           if (old_blocks.size() < block_locations.size()) {
             recover_data(block_locations, old_blocks);
           }
@@ -411,11 +460,11 @@ namespace raid_fs {
               }
               row_map[P_node_idx] = P_block_opt.value();
             }
-            if (!invalid_Q_node &&old_blocks.contains(Q_node_idx)) {
+            if (!invalid_Q_node && old_blocks.contains(Q_node_idx)) {
               Q_block_opt = std::move(old_blocks[Q_node_idx]);
               galois_field::Element sum(
                   byte_stream_view_type(Q_block_opt.value()));
-              for (auto const &[physical_node_no, old_block] :old_blocks) {
+              for (auto const &[physical_node_no, old_block] : old_blocks) {
                 if (physical_node_no != P_node_idx &&
                     physical_node_no != Q_node_idx) {
                   assert(!old_block.empty());

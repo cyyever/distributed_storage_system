@@ -77,8 +77,9 @@ namespace raid_fs::galois_field {
         data_ptr[i] = byte_multiply_by_2(data_ptr[i]);
       }
     }
+    static inline uint8_t byte_addition(uint8_t a, uint8_t b) { return a ^ b; }
 
-    static uint8_t byte_multiply_by_2(uint8_t b) {
+    static inline uint8_t byte_multiply_by_2(uint8_t b) {
       return (b << 1) ^ ((b & 0x80) ? 0x1d : 0);
     }
     static uint8_t byte_multiply(uint8_t a, uint8_t b) {
