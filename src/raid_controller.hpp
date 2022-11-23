@@ -83,7 +83,6 @@ namespace raid_fs {
                       Error_Name(reply.error()));
 
           } else {
-
             LOG_ERROR("read block from node {} failed:{}", physical_node_no,
                       Error_Name(reply.error()));
           }
@@ -273,7 +272,6 @@ namespace raid_fs {
       bool Q_node_avaiable = !invalid_Q_node;
       for (auto [physical_node_no, physical_block_no] : block_locations) {
         if (!read_raid_blocks.contains(physical_node_no)) {
-          LOG_DEBUG("node {} failed", physical_node_no);
           if (physical_node_no == P_node_idx) {
             P_node_avaiable = false;
           }
@@ -285,11 +283,9 @@ namespace raid_fs {
       }
       for (auto &[failed_physical_block_no, failed_row_nodes] : failed_blocks) {
         if (!P_node_avaiable) {
-          LOG_DEBUG("node {} failed", P_node_idx);
           failed_row_nodes.insert(P_node_idx);
         }
         if (!Q_node_avaiable) {
-          LOG_DEBUG("node {} failed", Q_node_idx);
           failed_row_nodes.insert(Q_node_idx);
         }
         if (failed_row_nodes.size() > 2) {
@@ -319,7 +315,6 @@ namespace raid_fs {
             row_block_views[physical_node_no] = row_res[physical_node_no];
             continue;
           }
-          LOG_DEBUG("node {} failed", physical_node_no);
           failed_row_nodes.insert(physical_node_no);
           if (physical_node_no == P_node_idx) {
             P_node_avaiable = false;
@@ -352,7 +347,7 @@ namespace raid_fs {
             read_raid_blocks[failed_physical_node_no] =
                 std::move(sum.get_byte_vector());
             assert(!read_raid_blocks[failed_physical_node_no].empty());
-            LOG_INFO("recover block {}", failed_physical_node_no);
+            LOG_DEBUG("recover block {}", failed_physical_node_no);
             continue;
           }
 
@@ -388,14 +383,13 @@ namespace raid_fs {
             int x = *it;
             it++;
             int y = *it;
-            LOG_DEBUG("process failed nodes {} {}",x,y);
+            LOG_DEBUG("process failed nodes {} {}", x, y);
 
             galois_field::Element P_block(row_block_views[P_node_idx]);
             galois_field::Element Q_block(row_block_views[Q_node_idx]);
 
             galois_field::Element P_xy_block(block_size);
             galois_field::Element Q_xy_block(block_size);
-            LOG_DEBUG("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
             size_t cnt = 0;
             for (auto &[physical_node_no, block_view] : row_block_views) {
@@ -410,12 +404,10 @@ namespace raid_fs {
                         physical_node_no));
               }
             }
-            LOG_DEBUG("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
             assert(cnt + 2 == data_node_number);
             auto tmp_power =
                 galois_field::Element::generator_power_table.get_power(y - x);
-            LOG_DEBUG("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
             auto x_block =
                 ((Q_block + Q_xy_block) *
                      galois_field::Element::generator_power_table
@@ -423,11 +415,9 @@ namespace raid_fs {
                  (P_block + P_xy_block) * tmp_power) *
                 galois_field::Element::multiply_inverse_table.get_inverse(
                     galois_field::Element::byte_addition(tmp_power, 1));
-            LOG_DEBUG("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
             auto y_block = P_block + P_xy_block + x_block;
 
-            LOG_DEBUG("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
             assert(!read_raid_blocks.contains(x));
             read_raid_blocks[x] = std::move(x_block.get_byte_vector());
             assert(!read_raid_blocks.contains(y));
@@ -479,10 +469,12 @@ namespace raid_fs {
           }
           auto old_blocks = parallel_read_blocks(stubs, block_locations);
           if (!old_blocks.contains(P_node_idx)) {
+            LOG_ERROR("P node become invalid");
             invalid_P_node = true;
             block_locations.erase(P_node_idx);
           }
           if (!old_blocks.contains(Q_node_idx)) {
+            LOG_ERROR("Q node become invalid");
             invalid_Q_node = true;
             block_locations.erase(Q_node_idx);
           }
@@ -493,19 +485,15 @@ namespace raid_fs {
           if (std::ranges::includes(std::views::keys(old_blocks),
                                     row_data_nodes)) {
             if (!invalid_P_node && old_blocks.contains(P_node_idx)) {
-              galois_field::Element sum(
-                  byte_stream_view_type(old_blocks[P_node_idx]));
+              galois_field::Element sum(old_blocks[P_node_idx]);
               for (auto const &[physical_node_no, block] : row_map) {
                 if (physical_node_no != P_node_idx &&
                     physical_node_no != Q_node_idx) {
                   assert(!block.empty());
-                  auto const &old_block=old_blocks[physical_node_no];
+                  auto const &old_block = old_blocks[physical_node_no];
                   assert(!old_block.empty());
-                  /* if(!row_map.contains(physical_node_no)) { */
-                  /*   LOG_ERROR("row map has no {}",physical_node_no); */
-                  /* } */
                   sum -= old_block;
-                  sum +=block;
+                  sum += block;
                 }
               }
               P_block_opt = std::move(sum.get_byte_vector());
@@ -518,7 +506,7 @@ namespace raid_fs {
                 if (physical_node_no != P_node_idx &&
                     physical_node_no != Q_node_idx) {
                   assert(!block.empty());
-                  auto const &old_block=old_blocks[physical_node_no];
+                  auto const &old_block = old_blocks[physical_node_no];
                   assert(!old_block.empty());
                   sum.multiply_subtract(
                       old_block,
@@ -535,6 +523,12 @@ namespace raid_fs {
             }
           }
         }
+        if (!row_map.contains(P_node_idx)) {
+          LOG_ERROR("not write to P node");
+        }
+        if (!row_map.contains(Q_node_idx)) {
+          LOG_ERROR("not write to Q node");
+        }
         auto succ_raid_nodes =
             write_raid_row(stubs, physical_block_no, row_map);
         for (auto physical_node_no : succ_raid_nodes) {
@@ -548,6 +542,15 @@ namespace raid_fs {
           } else if (!std::ranges::includes(succ_raid_nodes, row_data_nodes)) {
             LOG_ERROR("write to some data node failed and P data is stale");
             invalid_P_node = true;
+          }
+        }
+        if (!invalid_Q_node) {
+          if (!succ_raid_nodes.contains(Q_node_idx)) {
+            LOG_ERROR("write to Q node failed or the data is stale");
+            invalid_Q_node = true;
+          } else if (!std::ranges::includes(succ_raid_nodes, row_data_nodes)) {
+            LOG_ERROR("write to some data node failed and Q data is stale");
+            invalid_Q_node = true;
           }
         }
       }
