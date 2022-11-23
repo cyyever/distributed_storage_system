@@ -1,12 +1,13 @@
 /*!
  * \file galois_field.hpp
  *
- * \brief Implementation of Galois field for RAID 6
+ * \brief Implementation of Galois field GF(2^8) for RAID 6
  */
 
 #include "block.hpp"
 namespace raid_fs::galois_field {
   class Element {
+
   public:
     Element(byte_stream_view_type byte_vector_) : byte_vector{byte_vector_} {}
     // Obtain additive inverse
@@ -19,7 +20,12 @@ namespace raid_fs::galois_field {
       for (size_t i = 0; i < byte_vector.size(); i++) {
         data_ptr[i] ^= rhs_data_ptr[i];
       }
+      return *this;
     }
+
+    // Since additive inverse is itself under XOR, subtraction is the same as
+    // addition
+    Element &operator-=(const Element &rhs) { return operator+=(rhs); }
 
     static uint8_t byte_multiply_by_2(uint8_t b) {
       return (b << 1) ^ ((b & 0x80) ? 0x1d : 0);
@@ -39,9 +45,31 @@ namespace raid_fs::galois_field {
       return res;
     }
 
-    /* static void multiply_table() { */
+  private:
+    class GeneratorPowerTable {
+    public:
+      GeneratorPowerTable() {
+        uint8_t power = 1;
+        table[0] = power;
+        for (size_t i = 1; i < 255; i++) {
+          power = Element::byte_multiply_by_2(power);
+          table[i] = power;
+        }
+        power = Element::byte_multiply_by_2(power);
+        assert(power == 1);
+      }
 
-    /* } */
+      uint8_t get_power(size_t exponent) {
+        assert(exponent < 256);
+        return table[exponent];
+      }
+
+    private:
+      std::array<uint8_t, 255> table{};
+    };
+
+  private:
+    static GeneratorPowerTable generator_power_table;
 
   private:
     byte_stream_view_type byte_vector;
