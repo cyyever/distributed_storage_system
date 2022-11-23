@@ -16,5 +16,6 @@ foreach(test_source IN LISTS test_sources)
     ${test_prog} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/.."
                          "${CMAKE_CURRENT_LIST_DIR}/../src")
   target_link_libraries(${test_prog} PUBLIC ${LIBS})
-  add_test_with_runtime_analysis(TARGET ${test_prog} HELGRIND OFF TSAN OFF)
+  add_test(TARGET ${test_prog})
+  # add_test_with_runtime_analysis(TARGET ${test_prog} HELGRIND OFF TSAN OFF)
 endforeach()
