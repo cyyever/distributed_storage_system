@@ -88,6 +88,7 @@ namespace raid_fs {
       for (size_t i = 0; i < std::size(parity_ports); i++, port++) {
         parity_ports[i] = port;
       }
+      random_error_number= sub_yaml_node["random_error_number"].as<size_t>();
 
       block_size = parse_size(sub_yaml_node, "block_size");
       if (disk_capacity % block_size != 0) {
@@ -98,6 +99,7 @@ namespace raid_fs {
     }
     std::vector<uint16_t> data_ports;
     std::array<uint16_t, 2> parity_ports;
+    size_t random_error_number{};
     size_t block_size{};
     bool use_memory_disk{};
     std::string disk_path_prefix{};
