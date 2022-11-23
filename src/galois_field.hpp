@@ -105,13 +105,13 @@ namespace raid_fs::galois_field {
       uint8_t res = 0;
       for (size_t i = 0; i < 7; i++) {
         if (b & 0x80) {
-          res += a;
+          res ^= a;
         }
         res = byte_multiply_by_2(res);
         b <<= 1;
       }
       if (b & 0x80) {
-        res += a;
+        res ^= a;
       }
       return res;
     }
@@ -133,6 +133,10 @@ namespace raid_fs::galois_field {
             }
           }
         }
+      }
+      uint8_t get_inverse(uint8_t a) const {
+        assert(a!=0);
+        return table[a];
       }
 
     private:

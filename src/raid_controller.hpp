@@ -409,13 +409,23 @@ namespace raid_fs {
             }
 
             assert(cnt + 2 == data_node_number);
-            (Q_block + Q_xy_block) *
+            auto tmp_power= galois_field::Element::generator_power_table.get_power(y - x);
+            auto x_block=((Q_block + Q_xy_block) *
                     galois_field::Element::generator_power_table
                         .get_negative_power(-x) +
-                (P_block + P_xy_block) *
-                    galois_field::Element::generator_power_table.get_power(y -
-                                                                           x);
+                (P_block + P_xy_block) *tmp_power
+                    ) *  galois_field::Element::multiply_inverse_table.get_inverse(
 
+               galois_field::Element::       byte_addition(tmp_power,1));
+
+            auto y_block=P_block+P_xy_block+x_block;
+
+            assert(!read_raid_blocks.contains(x));
+            read_raid_blocks[x] =
+                std::move(x_block.get_byte_vector());
+            assert(!read_raid_blocks.contains(y));
+            read_raid_blocks[y] =
+                std::move(y_block.get_byte_vector());
             continue;
           }
           // can't recover
