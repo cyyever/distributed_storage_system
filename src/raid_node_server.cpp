@@ -107,15 +107,19 @@ int main(int argc, char **argv) {
   ports.insert(ports.end(), cfg.parity_ports.begin(), cfg.parity_ports.end());
 
   assert(ports.size() == cfg.data_ports.size() + cfg.parity_ports.size());
-  auto random_error_number = std::min(cfg.random_error_number, ports.size());
 
   std::set<uint16_t> random_failure_ports;
-  if (random_error_number > 0) {
+  if (cfg.random_failure_data_nodes > 0) {
     std::sample(
-        ports.begin(), ports.end(),
+        cfg.data_ports.begin(), cfg.data_ports.end(),
         std::inserter(random_failure_ports, random_failure_ports.begin()),
-        random_error_number, std::mt19937{std::random_device{}()});
-    assert(random_failure_ports.size() == random_error_number);
+        cfg.random_failure_data_nodes, std::mt19937{std::random_device{}()});
+  }
+  if (cfg.random_failure_parity_nodes > 0) {
+    std::sample(
+        cfg.parity_ports.begin(), cfg.parity_ports.end(),
+        std::inserter(random_failure_ports, random_failure_ports.begin()),
+        cfg.random_failure_parity_nodes, std::mt19937{std::random_device{}()});
   }
 
   for (auto port : ports) {

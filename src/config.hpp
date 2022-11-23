@@ -25,7 +25,7 @@ namespace raid_fs {
     static size_t parse_size(const YAML::Node &node, const std::string &key) {
       size_t result = 0;
       std::smatch match;
-      std::regex re("^([0-9]+)([KMGT]?)B$");
+      const std::regex re("^([0-9]+)([KMGT]?)B$");
       auto config_value = node[key].as<std::string>();
       if (std::regex_search(config_value, match, re)) {
         result = std::stoull(match.str(1));
@@ -88,7 +88,12 @@ namespace raid_fs {
       for (size_t i = 0; i < std::size(parity_ports); i++, port++) {
         parity_ports[i] = port;
       }
-      random_error_number = sub_yaml_node["random_error_number"].as<size_t>();
+      random_failure_data_nodes =
+          std::min(sub_yaml_node["random_failure_data_nodes"].as<size_t>(),
+                   data_ports.size());
+      random_failure_parity_nodes =
+          std::min(sub_yaml_node["random_failure_parity_nodes"].as<size_t>(),
+                   parity_ports.size());
 
       block_size = parse_size(sub_yaml_node, "block_size");
       if (disk_capacity % block_size != 0) {
@@ -98,8 +103,9 @@ namespace raid_fs {
       disk_path_prefix = sub_yaml_node["disk_path_prefix"].as<std::string>();
     }
     std::vector<uint16_t> data_ports;
-    std::array<uint16_t, 2> parity_ports;
-    size_t random_error_number{};
+    std::array<uint16_t, 2> parity_ports{};
+    size_t random_failure_data_nodes{};
+    size_t random_failure_parity_nodes{};
     size_t block_size{};
     bool use_memory_disk{};
     std::string disk_path_prefix{};

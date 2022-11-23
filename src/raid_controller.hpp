@@ -10,6 +10,7 @@
 #include <map>
 #include <ranges>
 #include <set>
+#include <utility>
 
 #include <cyy/naive_lib/log/log.hpp>
 #include <grpcpp/client_context.h>
@@ -32,7 +33,7 @@ namespace raid_fs {
     write(std::map<uint64_t, byte_stream_type> blocks) = 0;
 
   protected:
-    std::map<uint64_t, byte_stream_type> parallel_read_blocks(
+    static std::map<uint64_t, byte_stream_type> parallel_read_blocks(
         const std::vector<std::unique_ptr<RAIDNode::Stub>> &stubs,
         const std::map<uint64_t, uint64_t> &block_locations) {
       std::map<uint64_t, byte_stream_type> raid_blocks;
@@ -77,7 +78,7 @@ namespace raid_fs {
         }
         if (reply.has_error()) {
           LOG_ERROR("read block from {} failed:{}", physical_node_no,
-                    reply.error());
+                    Error_Name(reply.error()));
           continue;
         }
         raid_blocks[physical_node_no] = reply.ok().block();
@@ -85,10 +86,10 @@ namespace raid_fs {
       return raid_blocks;
     }
 
-    std::set<uint64_t>
-    write_raid_row(const std::vector<std::unique_ptr<RAIDNode::Stub>> &stubs,
-                   uint64_t physical_block_no,
-                   std::map<uint64_t, const_byte_stream_view_type> row_blocks) {
+    static std::set<uint64_t> write_raid_row(
+        const std::vector<std::unique_ptr<RAIDNode::Stub>> &stubs,
+        uint64_t physical_block_no,
+        const std::map<uint64_t, const_byte_stream_view_type> &row_blocks) {
       std::set<uint64_t> raid_results;
       grpc::CompletionQueue cq;
       std::map<
@@ -142,10 +143,11 @@ namespace raid_fs {
   };
   class RAID6Controller : public RAIDController {
   public:
-    RAID6Controller(const RAIDConfig &raid_config) {
-      data_node_number = raid_config.data_ports.size();
-      capacity = raid_config.disk_capacity * data_node_number;
-      block_size = raid_config.block_size;
+    explicit RAID6Controller(const RAIDConfig &raid_config)
+        : data_node_number(raid_config.data_ports.size()),
+          capacity(raid_config.disk_capacity * data_node_number),
+          block_size(raid_config.block_size) {
+
       for (auto port : raid_config.data_ports) {
         auto channel =
             grpc::CreateChannel(fmt::format("localhost:{}", port),
@@ -168,10 +170,11 @@ namespace raid_fs {
 
     std::map<LogicalAddressRange, byte_stream_type>
     read(const std::set<LogicalAddressRange> &data_ranges) override {
+      std::shared_lock lk(data_mutex);
       auto raid_blocks = read_blocks(get_raid_block_no(data_ranges));
       std::map<LogicalAddressRange, byte_stream_type> results;
       for (auto const &range : data_ranges) {
-        bool has_raid_block =
+        bool const has_raid_block =
             std::ranges::all_of(get_raid_block_no({range}), [&](auto block_no) {
               return raid_blocks.contains(block_no);
             });
@@ -205,7 +208,7 @@ namespace raid_fs {
       auto raid_res = write_blocks(raid_blocks);
       std::set<uint64_t> block_result;
       for (auto const &[data_offset, block] : blocks) {
-        bool write_succ = std::ranges::all_of(
+        bool const write_succ = std::ranges::all_of(
             LogicalAddressRange(data_offset, block.size()).split(block_size),
             [&](const auto &range) {
               return raid_res.contains(range.offset / block_size);
@@ -219,7 +222,7 @@ namespace raid_fs {
 
   private:
     std::set<uint64_t>
-    get_raid_block_no(const std::set<LogicalAddressRange> &data_ranges) {
+    get_raid_block_no(const std::set<LogicalAddressRange> &data_ranges) const {
       std::set<uint64_t> raid_block_no_set;
       for (auto const &range : data_ranges) {
         for (auto sub_range : range.split(block_size)) {
@@ -246,18 +249,35 @@ namespace raid_fs {
           block_locations[physical_node_no] = physical_block_no;
         }
         auto res = parallel_read_blocks(stubs, block_locations);
+        std::map<uint64_t, byte_stream_type> read_raid_blocks;
         for (auto &[physical_node_no, block] : res) {
-          raid_blocks[block_locations[physical_node_no] * data_node_number +
-                      physical_node_no] = std::move(block);
+          read_raid_blocks[block_locations[physical_node_no] *
+                               data_node_number +
+                           physical_node_no] = std::move(block);
         }
+        auto failed_nodes = block_locations.size() - read_raid_blocks.size();
+        if (failed_nodes > 0 && failed_nodes <= 2) {
+          recover_data(block_locations, read_raid_blocks);
+        }
+        raid_blocks.merge(std::move(read_raid_blocks));
         block_no_set = std::move(new_block_no_set);
       }
       return raid_blocks;
     }
 
+    // Recover missing data using RAID 6 mechanism
+    static void
+    recover_data(const std::map<uint64_t, uint64_t> &block_locations,
+                 std::map<uint64_t, byte_stream_type> & /*result*/) {
+      // recover from failure
+      for (auto [physical_node_no, physical_block_no] : block_locations) {
+      }
+    }
+
     std::map<uint64_t, std::map<uint64_t, const_byte_stream_view_type>>
     convert_to_physical_nodes(
-        std::map<uint64_t, const_byte_stream_view_type> raid_blocks) {
+        const std::map<uint64_t, const_byte_stream_view_type> &raid_blocks)
+        const {
       std::map<uint64_t, std::map<uint64_t, const_byte_stream_view_type>>
           physical_blocks;
       for (auto &[block_no, raid_block] : raid_blocks) {
@@ -270,9 +290,9 @@ namespace raid_fs {
 
     std::set<uint64_t>
     write_blocks(std::map<uint64_t, const_byte_stream_view_type> raid_blocks) {
+      std::lock_guard lk(data_mutex);
       std::set<uint64_t> raid_results;
-      grpc::CompletionQueue cq;
-      auto physical_blocks = convert_to_physical_nodes(raid_blocks);
+      auto physical_blocks = convert_to_physical_nodes(std::move(raid_blocks));
       for (auto &[physical_block_no, row_map] : physical_blocks) {
         std::map<uint64_t, uint64_t> block_locations;
         if (P_node_idx_opt.has_value() || Q_node_idx_opt.has_value()) {
@@ -288,7 +308,7 @@ namespace raid_fs {
           auto read_res = parallel_read_blocks(stubs, block_locations);
           // write P and Q
           std::optional<block_data_type> P_block_opt;
-          std::optional<block_data_type> Q_block_opt;
+          std::optional<block_data_type> const Q_block_opt;
           if (read_res.size() == block_locations.size()) {
             if (P_node_idx_opt.has_value()) {
               /* auto old_block = */
@@ -345,6 +365,7 @@ namespace raid_fs {
     /* bool Q_stale{false}; */
     size_t capacity{};
     size_t block_size{};
+    static inline std::shared_mutex data_mutex;
   };
 
   inline std::shared_ptr<RAIDController>
