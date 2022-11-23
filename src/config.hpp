@@ -88,7 +88,7 @@ namespace raid_fs {
       for (size_t i = 0; i < std::size(parity_ports); i++, port++) {
         parity_ports[i] = port;
       }
-      random_error_number= sub_yaml_node["random_error_number"].as<size_t>();
+      random_error_number = sub_yaml_node["random_error_number"].as<size_t>();
 
       block_size = parse_size(sub_yaml_node, "block_size");
       if (disk_capacity % block_size != 0) {

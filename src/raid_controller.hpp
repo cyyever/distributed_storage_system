@@ -268,16 +268,6 @@ namespace raid_fs {
       return physical_blocks;
     }
 
-    void xor_blocks(block_data_type &block,
-                    const_byte_stream_view_type rhs_block) {
-      assert(block.size() == rhs_block.size());
-      auto data_ptr = reinterpret_cast<std::byte *>(block.data());
-      auto rhs_data_ptr = reinterpret_cast<const std::byte *>(rhs_block.data());
-      for (size_t i = 0; i < block.size(); i++) {
-        data_ptr[i] ^= rhs_data_ptr[i];
-      }
-    }
-
     std::set<uint64_t>
     write_blocks(std::map<uint64_t, const_byte_stream_view_type> raid_blocks) {
       std::set<uint64_t> raid_results;
@@ -316,15 +306,15 @@ namespace raid_fs {
               /* assert(old_block != new_block); */
               row_map[P_node_idx_opt.value()] = P_block_opt.value();
             }
-            if (Q_node_idx_opt.has_value()) {
-              Q_block_opt = std::move(read_res[Q_node_idx_opt.value()]);
-              for (auto const &[physical_node_no, block] : read_res) {
-                if (physical_block_no != Q_node_idx_opt.value()) {
-                  xor_blocks(Q_block_opt.value(), block);
-                }
-              }
-              row_map[Q_node_idx_opt.value()] = Q_block_opt.value();
-            }
+            /* if (Q_node_idx_opt.has_value()) { */
+            /*   Q_block_opt = std::move(read_res[Q_node_idx_opt.value()]); */
+            /*   for (auto const &[physical_node_no, block] : read_res) { */
+            /*     if (physical_block_no != Q_node_idx_opt.value()) { */
+            /*       xor_blocks(Q_block_opt.value(), block); */
+            /*     } */
+            /*   } */
+            /*   row_map[Q_node_idx_opt.value()] = Q_block_opt.value(); */
+            /* } */
           } else {
             if (P_node_idx_opt.has_value() &&
                 !read_res.contains(P_node_idx_opt.value())) {

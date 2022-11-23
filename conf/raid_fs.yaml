@@ -11,7 +11,8 @@ filesystem:
 
 RAID6:
   data_node_number: 2
+  random_error_number: 1
   first_node_port: 60001
   block_size: 2KB
-  use_memory_disk: false
+  use_memory_disk: true
   disk_path_prefix: /tmp/cyy_raid_fs_

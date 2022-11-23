@@ -1,5 +1,9 @@
 
 
+#include <algorithm>
+#include <iterator>
+#include <random>
+
 #include <cyy/naive_lib/log/log.hpp>
 #include <cyy/naive_lib/util/error.hpp>
 #include <grpc/grpc.h>
@@ -16,8 +20,14 @@ namespace raid_fs {
 
   class RAIDNodeServiceImpl final : public raid_fs::RAIDNode::Service {
   public:
-    explicit RAIDNodeServiceImpl(const RAIDConfig &config, size_t service_id)
-        : disk_ptr(get_disk(config, service_id)) {}
+    explicit RAIDNodeServiceImpl(const RAIDConfig &config, size_t service_id,
+                                 bool random_failure_ = false)
+        : disk_ptr(get_disk(config, service_id)),
+          random_failure{random_failure_} {
+      if (random_failure) {
+        LOG_WARN("RAID node {} will fail randomly", service_id);
+      }
+    }
 
     ~RAIDNodeServiceImpl() override = default;
     ::grpc::Status Read(::grpc::ServerContext *context,
@@ -28,6 +38,20 @@ namespace raid_fs {
                   disk_ptr->get_block_number());
         response->set_error(Error::ERROR_FS_INTERNAL_ERROR);
         return ::grpc::Status::OK;
+      }
+
+      if (random_failure) {
+        std::unique_lock lk(rng_mutex);
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::bernoulli_distribution d(0.9);
+        bool sampled_value = d(gen);
+        lk.unlock();
+        if (sampled_value) {
+          LOG_ERROR("triggered random failure ");
+          response->set_error(Error::ERROR_GENERATED_RANDOM_ERROR);
+          return ::grpc::Status::OK;
+        }
       }
       auto res = disk_ptr->read(request->block_no());
       if (res.has_value()) {
@@ -65,6 +89,8 @@ namespace raid_fs {
 
   private:
     std::shared_ptr<VirtualDisk> disk_ptr;
+    bool random_failure{false};
+    std::mutex rng_mutex;
   };
 } // namespace raid_fs
 int main(int argc, char **argv) {
@@ -79,17 +105,32 @@ int main(int argc, char **argv) {
   size_t service_id = 0;
   auto ports = cfg.data_ports;
   ports.insert(ports.end(), cfg.parity_ports.begin(), cfg.parity_ports.end());
+
+  assert(ports.size() == cfg.data_ports.size() + cfg.parity_ports.size());
+  auto random_error_number = std::min(cfg.random_error_number, ports.size());
+
+  std::set<uint16_t> random_failure_ports;
+  if (random_error_number > 0) {
+    std::sample(
+        ports.begin(), ports.end(),
+        std::inserter(random_failure_ports, random_failure_ports.begin()),
+        random_error_number, std::mt19937{std::random_device{}()});
+    assert(random_failure_ports.size() == random_error_number);
+  }
+
   for (auto port : ports) {
     std::string server_address(fmt::format("0.0.0.0:{}", port));
     grpc::ServerBuilder builder;
-    services.emplace_back(
-        std::make_unique<raid_fs::RAIDNodeServiceImpl>(cfg, service_id));
+    bool random_failure = random_failure_ports.contains(port);
+    services.emplace_back(std::make_unique<raid_fs::RAIDNodeServiceImpl>(
+        cfg, service_id, random_failure));
     service_id++;
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
     builder.RegisterService(services.back().get());
     servers.emplace_back(builder.BuildAndStart());
     std::cout << "Server listening on " << server_address << std::endl;
   }
+
   for (const auto &server : servers) {
     server->Wait();
   }
