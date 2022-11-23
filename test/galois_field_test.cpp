@@ -2,6 +2,8 @@
  * \file galois_field_test.cpp
  *
  */
+#include <set>
+
 #include <doctest/doctest.h>
 
 #include "galois_field.hpp"
@@ -13,5 +15,18 @@ TEST_CASE("Galois field") {
     REQUIRE_EQ(raid_fs::galois_field::Element::byte_multiply(8, 2), 16);
     REQUIRE_EQ(raid_fs::galois_field::Element::byte_multiply(0x80, 2), 0x1d);
     REQUIRE_EQ(raid_fs::galois_field::Element::byte_multiply_by_2(0x80), 0x1d);
+  }
+  SUBCASE("generator power table") {
+    std::set<uint8_t> power_table;
+    uint8_t power = 1;
+    power_table.insert(power);
+    for (size_t i = 1; i < 255; i++) {
+      power = raid_fs::galois_field::Element::byte_multiply_by_2(power);
+      REQUIRE(!power_table.contains(power));
+      power_table.insert(power);
+    }
+    REQUIRE_EQ(power_table.size(), 255);
+    power = raid_fs::galois_field::Element::byte_multiply_by_2(power);
+    REQUIRE_EQ(power, 1);
   }
 }
