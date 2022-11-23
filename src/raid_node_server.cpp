@@ -48,7 +48,7 @@ namespace raid_fs {
         bool sampled_value = d(gen);
         lk.unlock();
         if (sampled_value) {
-          LOG_ERROR("triggered random failure ");
+          LOG_DEBUG("triggered random failure ");
           response->set_error(Error::ERROR_GENERATED_RANDOM_ERROR);
           return ::grpc::Status::OK;
         }

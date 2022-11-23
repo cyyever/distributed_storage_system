@@ -4,6 +4,9 @@
  * \brief Implementation of Galois field GF(2^8) for RAID 6
  */
 
+#include <cyy/naive_lib/log/log.hpp>
+#include <spdlog/fmt/fmt.h>
+
 #include "block.hpp"
 namespace raid_fs::galois_field {
   class Element {
@@ -12,6 +15,7 @@ namespace raid_fs::galois_field {
     explicit Element(byte_stream_view_type byte_vector_)
         : byte_vector{byte_vector_} {
       if (byte_vector.empty()) {
+        LOG_ERROR("can't support empty byte vector");
         throw std::runtime_error("can't support empty byte vector");
       }
     }
@@ -19,7 +23,12 @@ namespace raid_fs::galois_field {
     Element operator-() const { return *this; }
     Element &operator+=(const const_byte_stream_view_type &rhs) {
       if (byte_vector.size() != rhs.size()) {
-        throw std::runtime_error("can't add byte vectors with different sizes");
+        LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
+                  byte_vector.size(), rhs.size());
+
+        throw std::runtime_error(fmt ::format(
+            "can't add byte vectors with different sizes: {} and {}",
+            byte_vector.size(), rhs.size()));
       }
       assert(byte_vector.size() == rhs.size());
       auto *data_ptr = reinterpret_cast<std::byte *>(byte_vector.data());

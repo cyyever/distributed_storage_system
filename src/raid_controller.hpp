@@ -73,13 +73,20 @@ namespace raid_fs {
         auto &[_, reply, grpc_status, __] = node.mapped();
 
         if (!grpc_status.ok()) {
-          LOG_ERROR("read block from {} failed:{}", physical_node_no,
+          LOG_ERROR("read block from node {} failed:{}", physical_node_no,
                     grpc_status.error_message());
           continue;
         }
         if (reply.has_error()) {
-          LOG_ERROR("read block from {} failed:{}", physical_node_no,
-                    Error_Name(reply.error()));
+          if (reply.error() == ERROR_GENERATED_RANDOM_ERROR) {
+            LOG_DEBUG("read block from node {} failed:{}", physical_node_no,
+                      Error_Name(reply.error()));
+
+          } else {
+
+            LOG_ERROR("read block from node {} failed:{}", physical_node_no,
+                      Error_Name(reply.error()));
+          }
           continue;
         }
         raid_blocks[physical_node_no] = reply.ok().block();
@@ -244,18 +251,15 @@ namespace raid_fs {
           }
           block_locations[physical_node_no] = physical_block_no;
         }
-        auto res = parallel_read_blocks(stubs, block_locations);
-        std::map<uint64_t, byte_stream_type> read_raid_blocks;
-        for (auto &[physical_node_no, block] : res) {
-          auto block_no = block_locations[physical_node_no] * data_node_number +
-                          physical_node_no;
-          read_raid_blocks[block_no] = std::move(block);
-        }
-        auto failed_nodes = block_locations.size() - read_raid_blocks.size();
-        if (failed_nodes > 0) {
+        auto read_raid_blocks = parallel_read_blocks(stubs, block_locations);
+        if (read_raid_blocks.size() < block_locations.size()) {
           recover_data(block_locations, read_raid_blocks);
         }
-        raid_blocks.merge(std::move(read_raid_blocks));
+        for (auto &[physical_node_no, block] : read_raid_blocks) {
+          auto block_no = block_locations[physical_node_no] * data_node_number +
+                          physical_node_no;
+          raid_blocks[block_no] = std::move(block);
+        }
         block_no_set = std::move(new_block_no_set);
       }
       return raid_blocks;
@@ -264,24 +268,33 @@ namespace raid_fs {
     // Recover missing data using RAID 6 mechanism
     void recover_data(const std::map<uint64_t, uint64_t> &block_locations,
                       std::map<uint64_t, byte_stream_type> &read_raid_blocks) {
-      // recover from failure
       std::map<uint64_t, std::set<uint64_t>> failed_blocks;
+      bool P_node_avaiable = !invalid_P_node;
+      bool Q_node_avaiable = !invalid_Q_node;
       for (auto [physical_node_no, physical_block_no] : block_locations) {
-        auto block_no = physical_block_no * data_node_number + physical_node_no;
-        if (!read_raid_blocks.contains(block_no)) {
+        if (!read_raid_blocks.contains(physical_node_no)) {
+          LOG_DEBUG("node {} failed", physical_node_no);
+          if (physical_node_no == P_node_idx) {
+            P_node_avaiable = false;
+          }
+          if (physical_node_no == Q_node_idx) {
+            Q_node_avaiable = false;
+          }
           failed_blocks[physical_block_no].emplace(physical_node_no);
         }
       }
-      bool P_node_avaiable = !invalid_P_node;
-      bool Q_node_avaiable = !invalid_Q_node;
       for (auto &[failed_physical_block_no, failed_row_nodes] : failed_blocks) {
         if (!P_node_avaiable) {
+          LOG_DEBUG("node {} failed", P_node_idx);
           failed_row_nodes.insert(P_node_idx);
         }
         if (!Q_node_avaiable) {
+          LOG_DEBUG("node {} failed", Q_node_idx);
           failed_row_nodes.insert(Q_node_idx);
         }
         if (failed_row_nodes.size() > 2) {
+          LOG_ERROR("can't recover for row {},failed node number {}",
+                    failed_physical_block_no, failed_row_nodes.size());
           // can't recover
           continue;
         }
@@ -293,9 +306,9 @@ namespace raid_fs {
           if (failed_row_nodes.contains(idx)) {
             continue;
           }
-          auto block_no = failed_physical_block_no * data_node_number + idx;
-          if (read_raid_blocks.contains(block_no)) {
-            row_block_views[idx] = read_raid_blocks[block_no];
+          if (read_raid_blocks.contains(idx) &&
+              block_locations.at(idx) == failed_physical_block_no) {
+            row_block_views[idx] = read_raid_blocks[idx];
             continue;
           }
           row_locations[idx] = failed_physical_block_no;
@@ -306,6 +319,7 @@ namespace raid_fs {
             row_block_views[physical_node_no] = row_res[physical_node_no];
             continue;
           }
+          LOG_DEBUG("node {} failed", physical_node_no);
           failed_row_nodes.insert(physical_node_no);
           if (physical_node_no == P_node_idx) {
             P_node_avaiable = false;
@@ -316,15 +330,23 @@ namespace raid_fs {
         }
 
         if (failed_row_nodes.size() == 1) {
-          assert(P_node_avaiable);
-          galois_field::Element sum(row_block_views[P_node_idx]);
+          assert(!row_block_views[P_node_idx].empty());
+          byte_stream_type P_block(row_block_views[P_node_idx].data(),
+                                   row_block_views[P_node_idx].size());
+          galois_field::Element sum(P_block);
           for (auto &[_, block_view] : row_block_views) {
+            assert(!block_view.empty());
             sum -= block_view;
           }
-          auto block_no = failed_physical_block_no * data_node_number +
-                          (*failed_row_nodes.begin());
-          read_raid_blocks[block_no] = std::move(row_res[P_node_idx]);
-        } else if (failed_row_nodes.size() == 2) {
+          auto failed_physical_node_no = (*failed_row_nodes.begin());
+          assert(!read_raid_blocks.contains(failed_physical_node_no));
+          assert(block_locations.contains(failed_physical_node_no));
+          read_raid_blocks[failed_physical_node_no] = std::move(P_block);
+          assert(!read_raid_blocks[failed_physical_node_no].empty());
+          LOG_INFO("recover block {}", failed_physical_node_no);
+        } else {
+          LOG_ERROR("can't recover for row {},failed node number {}",
+                    failed_physical_block_no, failed_row_nodes.size());
           // can't recover
           if (P_node_avaiable && Q_node_avaiable) {
             continue;
@@ -355,6 +377,7 @@ namespace raid_fs {
       for (auto &[physical_block_no, row_map] : physical_blocks) {
         std::map<uint64_t, uint64_t> block_locations;
         std::set<uint64_t> row_data_nodes;
+        std::optional<block_data_type> P_block_opt;
         if (!invalid_P_node || !invalid_Q_node) {
           for (auto const &[physical_node_no, _] : row_map) {
             block_locations.emplace(physical_node_no, physical_block_no);
@@ -367,8 +390,18 @@ namespace raid_fs {
             block_locations.emplace(Q_node_idx, physical_block_no);
           }
           auto read_res = parallel_read_blocks(stubs, block_locations);
+          for (auto const &[physical_node_no, block] : read_res) {
+            assert(!block.empty());
+          }
+          if (read_res.size() < block_locations.size()) {
+            LOG_ERROR("before recover {}", read_res.size());
+            recover_data(block_locations, read_res);
+            LOG_ERROR("after recover {}", read_res.size());
+            for (auto const &[physical_node_no, block] : read_res) {
+              assert(!block.empty());
+            }
+          }
           // write P and Q
-          std::optional<block_data_type> P_block_opt;
           if (std::ranges::includes(std::views::keys(read_res),
                                     row_data_nodes)) {
             if (!invalid_P_node && read_res.contains(P_node_idx)) {
@@ -378,7 +411,8 @@ namespace raid_fs {
               galois_field::Element sum(
                   byte_stream_view_type(P_block_opt.value()));
               for (auto const &[physical_node_no, block] : read_res) {
-                if (physical_block_no != P_node_idx) {
+                if (physical_node_no != P_node_idx) {
+                  assert(!block.empty());
                   sum += block;
                 }
               }
