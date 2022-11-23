@@ -102,7 +102,7 @@ namespace raid_fs {
       for (auto &[physical_node_no, raid_block] : row_blocks) {
         BlockWriteRequest request;
         request.set_block_no(physical_block_no);
-        request.set_block(byte_stream_type(raid_block));
+        request.set_block(raid_block.data(), raid_block.size());
 
         std::get<0>(reply_map[physical_node_no]) =
             stubs[physical_node_no]->AsyncWrite(
@@ -275,17 +275,13 @@ namespace raid_fs {
       bool P_node_avaiable = !invalid_P_node;
       bool Q_node_avaiable = !invalid_Q_node;
       for (auto &[failed_physical_block_no, failed_row_nodes] : failed_blocks) {
-        if (failed_row_nodes.size() == 1) {
-          // can't recover
-          if (!P_node_avaiable && !Q_node_avaiable) {
-            continue;
-          }
-        } else if (failed_row_nodes.size() == 2) {
-          // can't recover
-          if (!P_node_avaiable || !Q_node_avaiable) {
-            continue;
-          }
-        } else {
+        if (!P_node_avaiable) {
+          failed_row_nodes.insert(P_node_idx);
+        }
+        if (!Q_node_avaiable) {
+          failed_row_nodes.insert(Q_node_idx);
+        }
+        if (failed_row_nodes.size() > 2) {
           // can't recover
           continue;
         }
@@ -297,12 +293,6 @@ namespace raid_fs {
           if (failed_row_nodes.contains(idx)) {
             continue;
           }
-          if (idx == P_node_idx && !P_node_avaiable) {
-            continue;
-          }
-          if (idx == Q_node_idx && !Q_node_avaiable) {
-            continue;
-          }
           auto block_no = failed_physical_block_no * data_node_number + idx;
           if (read_raid_blocks.contains(block_no)) {
             row_block_views[idx] = read_raid_blocks[block_no];
@@ -310,10 +300,10 @@ namespace raid_fs {
           }
           row_locations[idx] = failed_physical_block_no;
         }
-        auto res = parallel_read_blocks(stubs, row_locations);
+        auto row_res = parallel_read_blocks(stubs, row_locations);
         for (auto const &[physical_node_no, _] : row_locations) {
-          if (res.contains(physical_node_no)) {
-            row_block_views[physical_node_no] = res[physical_node_no];
+          if (row_res.contains(physical_node_no)) {
+            row_block_views[physical_node_no] = row_res[physical_node_no];
             continue;
           }
           failed_row_nodes.insert(physical_node_no);
@@ -326,18 +316,19 @@ namespace raid_fs {
         }
 
         if (failed_row_nodes.size() == 1) {
-          // can't recover
-          if (!P_node_avaiable && !Q_node_avaiable) {
-            continue;
+          assert(P_node_avaiable);
+          galois_field::Element sum(row_block_views[P_node_idx]);
+          for (auto &[_, block_view] : row_block_views) {
+            sum -= block_view;
           }
+          auto block_no = failed_physical_block_no * data_node_number +
+                          (*failed_row_nodes.begin());
+          read_raid_blocks[block_no] = std::move(row_res[P_node_idx]);
         } else if (failed_row_nodes.size() == 2) {
           // can't recover
-          if (!P_node_avaiable || !Q_node_avaiable) {
+          if (P_node_avaiable && Q_node_avaiable) {
             continue;
           }
-        } else {
-          // can't recover
-          continue;
         }
       }
     }

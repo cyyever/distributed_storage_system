@@ -10,10 +10,17 @@ namespace raid_fs::galois_field {
 
   public:
     explicit Element(byte_stream_view_type byte_vector_)
-        : byte_vector{byte_vector_} {}
+        : byte_vector{byte_vector_} {
+      if (byte_vector.empty()) {
+        throw std::runtime_error("can't support empty byte vector");
+      }
+    }
     // Obtain additive inverse
     Element operator-() const { return *this; }
     Element &operator+=(const const_byte_stream_view_type &rhs) {
+      if (byte_vector.size() != rhs.size()) {
+        throw std::runtime_error("can't add byte vectors with different sizes");
+      }
       assert(byte_vector.size() == rhs.size());
       auto *data_ptr = reinterpret_cast<std::byte *>(byte_vector.data());
       const auto *rhs_data_ptr =

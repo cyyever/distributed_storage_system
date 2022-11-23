@@ -13,7 +13,7 @@
 namespace raid_fs {
   using byte_stream_type = std::string;
   using byte_stream_view_type = std::span<char>;
-  using const_byte_stream_view_type = std::string_view;
+  using const_byte_stream_view_type = std::span<const char>;
   using block_data_type = byte_stream_type;
   using block_data_view_type = byte_stream_view_type;
   using const_block_data_view_type = const_byte_stream_view_type;
