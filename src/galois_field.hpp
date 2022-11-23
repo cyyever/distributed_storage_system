@@ -39,6 +39,7 @@ namespace raid_fs::galois_field {
     static uint8_t byte_multiply_by_2(uint8_t b) {
       return (b << 1) ^ ((b & 0x80) ? 0x1d : 0);
     }
+    /*
     static uint8_t byte_multiply(uint8_t a, uint8_t b) {
       uint8_t res = 0;
       for (size_t i = 0; i < 7; i++) {
@@ -53,6 +54,7 @@ namespace raid_fs::galois_field {
       }
       return res;
     }
+    */
 
   private:
     class GeneratorPowerTable {

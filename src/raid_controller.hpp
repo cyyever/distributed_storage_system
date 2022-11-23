@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cassert>
 #include <map>
+#include <mutex>
 #include <ranges>
 #include <set>
 #include <utility>
@@ -90,7 +91,6 @@ namespace raid_fs {
         const std::vector<std::unique_ptr<RAIDNode::Stub>> &stubs,
         uint64_t physical_block_no,
         const std::map<uint64_t, const_byte_stream_view_type> &row_blocks) {
-      std::set<uint64_t> raid_results;
       grpc::CompletionQueue cq;
       std::map<
           uint64_t,
@@ -112,6 +112,7 @@ namespace raid_fs {
                      &std::get<2>(reply_map[physical_node_no]),
                      (void *)physical_node_no);
       }
+      std::set<uint64_t> succ_physical_nodes;
       while (!reply_map.empty()) {
         void *got_tag = nullptr;
         bool ok = false;
@@ -136,9 +137,9 @@ namespace raid_fs {
                     reply.error());
           continue;
         }
-        raid_results.insert(physical_node_no);
+        succ_physical_nodes.insert(physical_node_no);
       }
-      return raid_results;
+      return succ_physical_nodes;
     }
   };
   class RAID6Controller : public RAIDController {
@@ -148,22 +149,17 @@ namespace raid_fs {
           capacity(raid_config.disk_capacity * data_node_number),
           block_size(raid_config.block_size) {
 
-      for (auto port : raid_config.data_ports) {
+      auto ports = raid_config.data_ports;
+      ports.insert(ports.end(), raid_config.parity_ports.begin(),
+                   raid_config.parity_ports.end());
+      for (auto port : ports) {
         auto channel =
             grpc::CreateChannel(fmt::format("localhost:{}", port),
                                 ::grpc::InsecureChannelCredentials());
         stubs.emplace_back(RAIDNode::NewStub(channel));
       }
-      auto channel = grpc::CreateChannel(
-          fmt::format("localhost:{}", raid_config.parity_ports[0]),
-          ::grpc::InsecureChannelCredentials());
-      P_node_idx_opt = stubs.size();
-      stubs.emplace_back(RAIDNode::NewStub(channel));
-      channel = grpc::CreateChannel(
-          fmt::format("localhost:{}", raid_config.parity_ports[1]),
-          ::grpc::InsecureChannelCredentials());
-      Q_node_idx_opt = stubs.size();
-      stubs.emplace_back(RAIDNode::NewStub(channel));
+      P_node_idx = data_node_number;
+      Q_node_idx = P_node_idx + 1;
     }
     ~RAID6Controller() override = default;
     size_t get_capacity() override { return capacity; }
@@ -251,12 +247,12 @@ namespace raid_fs {
         auto res = parallel_read_blocks(stubs, block_locations);
         std::map<uint64_t, byte_stream_type> read_raid_blocks;
         for (auto &[physical_node_no, block] : res) {
-          read_raid_blocks[block_locations[physical_node_no] *
-                               data_node_number +
-                           physical_node_no] = std::move(block);
+          auto block_no = block_locations[physical_node_no] * data_node_number +
+                          physical_node_no;
+          read_raid_blocks[block_no] = std::move(block);
         }
         auto failed_nodes = block_locations.size() - read_raid_blocks.size();
-        if (failed_nodes > 0 && failed_nodes <= 2) {
+        if (failed_nodes > 0) {
           recover_data(block_locations, read_raid_blocks);
         }
         raid_blocks.merge(std::move(read_raid_blocks));
@@ -266,11 +262,83 @@ namespace raid_fs {
     }
 
     // Recover missing data using RAID 6 mechanism
-    static void
-    recover_data(const std::map<uint64_t, uint64_t> &block_locations,
-                 std::map<uint64_t, byte_stream_type> & /*result*/) {
+    void recover_data(const std::map<uint64_t, uint64_t> &block_locations,
+                      std::map<uint64_t, byte_stream_type> &read_raid_blocks) {
       // recover from failure
+      std::map<uint64_t, std::set<uint64_t>> failed_blocks;
       for (auto [physical_node_no, physical_block_no] : block_locations) {
+        auto block_no = physical_block_no * data_node_number + physical_node_no;
+        if (!read_raid_blocks.contains(block_no)) {
+          failed_blocks[physical_block_no].emplace(physical_node_no);
+        }
+      }
+      bool P_node_avaiable = !invalid_P_node;
+      bool Q_node_avaiable = !invalid_Q_node;
+      for (auto &[failed_physical_block_no, failed_row_nodes] : failed_blocks) {
+        if (failed_row_nodes.size() == 1) {
+          // can't recover
+          if (!P_node_avaiable && !Q_node_avaiable) {
+            continue;
+          }
+        } else if (failed_row_nodes.size() == 2) {
+          // can't recover
+          if (!P_node_avaiable || !Q_node_avaiable) {
+            continue;
+          }
+        } else {
+          // can't recover
+          continue;
+        }
+
+        std::map<uint64_t, uint64_t> row_locations;
+        std::map<uint64_t, byte_stream_view_type> row_block_views;
+
+        for (uint64_t idx = 0; idx < stubs.size(); idx++) {
+          if (failed_row_nodes.contains(idx)) {
+            continue;
+          }
+          if (idx == P_node_idx && !P_node_avaiable) {
+            continue;
+          }
+          if (idx == Q_node_idx && !Q_node_avaiable) {
+            continue;
+          }
+          auto block_no = failed_physical_block_no * data_node_number + idx;
+          if (read_raid_blocks.contains(block_no)) {
+            row_block_views[idx] = read_raid_blocks[block_no];
+            continue;
+          }
+          row_locations[idx] = failed_physical_block_no;
+        }
+        auto res = parallel_read_blocks(stubs, row_locations);
+        for (auto const &[physical_node_no, _] : row_locations) {
+          if (res.contains(physical_node_no)) {
+            row_block_views[physical_node_no] = res[physical_node_no];
+            continue;
+          }
+          failed_row_nodes.insert(physical_node_no);
+          if (physical_node_no == P_node_idx) {
+            P_node_avaiable = false;
+          }
+          if (physical_node_no == Q_node_idx) {
+            Q_node_avaiable = false;
+          }
+        }
+
+        if (failed_row_nodes.size() == 1) {
+          // can't recover
+          if (!P_node_avaiable && !Q_node_avaiable) {
+            continue;
+          }
+        } else if (failed_row_nodes.size() == 2) {
+          // can't recover
+          if (!P_node_avaiable || !Q_node_avaiable) {
+            continue;
+          }
+        } else {
+          // can't recover
+          continue;
+        }
       }
     }
 
@@ -295,61 +363,55 @@ namespace raid_fs {
       auto physical_blocks = convert_to_physical_nodes(std::move(raid_blocks));
       for (auto &[physical_block_no, row_map] : physical_blocks) {
         std::map<uint64_t, uint64_t> block_locations;
-        if (P_node_idx_opt.has_value() || Q_node_idx_opt.has_value()) {
+        std::set<uint64_t> row_data_nodes;
+        if (!invalid_P_node || !invalid_Q_node) {
           for (auto const &[physical_node_no, _] : row_map) {
             block_locations.emplace(physical_node_no, physical_block_no);
+            row_data_nodes.insert(physical_node_no);
           }
-          if (P_node_idx_opt.has_value()) {
-            block_locations.emplace(P_node_idx_opt.value(), physical_block_no);
+          if (!invalid_P_node) {
+            block_locations.emplace(P_node_idx, physical_block_no);
           }
-          if (Q_node_idx_opt.has_value()) {
-            block_locations.emplace(Q_node_idx_opt.value(), physical_block_no);
+          if (!invalid_Q_node) {
+            block_locations.emplace(Q_node_idx, physical_block_no);
           }
           auto read_res = parallel_read_blocks(stubs, block_locations);
           // write P and Q
           std::optional<block_data_type> P_block_opt;
-          std::optional<block_data_type> const Q_block_opt;
-          if (read_res.size() == block_locations.size()) {
-            if (P_node_idx_opt.has_value()) {
+          if (std::ranges::includes(std::views::keys(read_res),
+                                    row_data_nodes)) {
+            if (!invalid_P_node && read_res.contains(P_node_idx)) {
               /* auto old_block = */
               /*     byte_stream_type(read_res[P_node_idx_opt.value()]); */
-              P_block_opt = std::move(read_res[P_node_idx_opt.value()]);
+              P_block_opt = std::move(read_res[P_node_idx]);
               galois_field::Element sum(
                   byte_stream_view_type(P_block_opt.value()));
               for (auto const &[physical_node_no, block] : read_res) {
-                if (physical_block_no != P_node_idx_opt.value()) {
+                if (physical_block_no != P_node_idx) {
                   sum += block;
                 }
               }
               /* auto new_block = */
               /*     byte_stream_type(read_res[P_node_idx_opt.value()]); */
               /* assert(old_block != new_block); */
-              row_map[P_node_idx_opt.value()] = P_block_opt.value();
-            }
-            /* if (Q_node_idx_opt.has_value()) { */
-            /*   Q_block_opt = std::move(read_res[Q_node_idx_opt.value()]); */
-            /*   for (auto const &[physical_node_no, block] : read_res) { */
-            /*     if (physical_block_no != Q_node_idx_opt.value()) { */
-            /*       xor_blocks(Q_block_opt.value(), block); */
-            /*     } */
-            /*   } */
-            /*   row_map[Q_node_idx_opt.value()] = Q_block_opt.value(); */
-            /* } */
-          } else {
-            if (P_node_idx_opt.has_value() &&
-                !read_res.contains(P_node_idx_opt.value())) {
-              P_node_idx_opt.reset();
-            }
-            if (Q_node_idx_opt.has_value() &&
-                !read_res.contains(Q_node_idx_opt.value())) {
-              Q_node_idx_opt.reset();
+              row_map[P_node_idx] = P_block_opt.value();
             }
           }
         }
-        auto row_res = write_raid_row(stubs, physical_block_no, row_map);
-        for (auto physical_node_no : row_res) {
+        auto succ_raid_nodes =
+            write_raid_row(stubs, physical_block_no, row_map);
+        for (auto physical_node_no : succ_raid_nodes) {
           raid_results.insert(physical_block_no * data_node_number +
                               physical_node_no);
+        }
+        if (!invalid_P_node) {
+          if (!succ_raid_nodes.contains(P_node_idx)) {
+            LOG_ERROR("write to P node failed or the data is stale");
+            invalid_P_node = true;
+          } else if (!std::ranges::includes(succ_raid_nodes, row_data_nodes)) {
+            LOG_ERROR("write to some data node failed and P data is stale");
+            invalid_P_node = true;
+          }
         }
       }
       return raid_results;
@@ -358,11 +420,10 @@ namespace raid_fs {
   private:
     std::vector<std::unique_ptr<RAIDNode::Stub>> stubs;
     size_t data_node_number{};
-    std::optional<size_t> P_node_idx_opt{};
-    std::optional<size_t> Q_node_idx_opt{};
-    /* size_t Q_node_idx{}; */
-    /* bool P_stale{false}; */
-    /* bool Q_stale{false}; */
+    size_t P_node_idx{};
+    size_t Q_node_idx{};
+    bool invalid_P_node{false};
+    bool invalid_Q_node{false};
     size_t capacity{};
     size_t block_size{};
     static inline std::shared_mutex data_mutex;
