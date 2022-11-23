@@ -378,6 +378,7 @@ namespace raid_fs {
         std::map<uint64_t, uint64_t> block_locations;
         std::set<uint64_t> row_data_nodes;
         std::optional<block_data_type> P_block_opt;
+        std::optional<block_data_type> Q_block_opt;
         if (!invalid_P_node || !invalid_Q_node) {
           for (auto const &[physical_node_no, _] : row_map) {
             block_locations.emplace(physical_node_no, physical_block_no);
@@ -405,8 +406,6 @@ namespace raid_fs {
           if (std::ranges::includes(std::views::keys(read_res),
                                     row_data_nodes)) {
             if (!invalid_P_node && read_res.contains(P_node_idx)) {
-              /* auto old_block = */
-              /*     byte_stream_type(read_res[P_node_idx_opt.value()]); */
               P_block_opt = std::move(read_res[P_node_idx]);
               galois_field::Element sum(
                   byte_stream_view_type(P_block_opt.value()));
@@ -416,10 +415,19 @@ namespace raid_fs {
                   sum += block;
                 }
               }
-              /* auto new_block = */
-              /*     byte_stream_type(read_res[P_node_idx_opt.value()]); */
-              /* assert(old_block != new_block); */
               row_map[P_node_idx] = P_block_opt.value();
+            }
+            if (!invalid_Q_node && read_res.contains(Q_node_idx)) {
+              Q_block_opt = std::move(read_res[Q_node_idx]);
+              galois_field::Element sum(
+                  byte_stream_view_type(Q_block_opt.value()));
+              for (auto const &[physical_node_no, block] : read_res) {
+                if (physical_node_no != Q_node_idx) {
+                  assert(!block.empty());
+                  sum += block;
+                }
+              }
+              row_map[Q_node_idx] = Q_block_opt.value();
             }
           }
         }
