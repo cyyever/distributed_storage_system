@@ -9,14 +9,15 @@ namespace raid_fs::galois_field {
   class Element {
 
   public:
-    Element(byte_stream_view_type byte_vector_) : byte_vector{byte_vector_} {}
+    explicit Element(byte_stream_view_type byte_vector_)
+        : byte_vector{byte_vector_} {}
     // Obtain additive inverse
     Element operator-() const { return *this; }
-    Element &operator+=(const Element &rhs) {
-      assert(byte_vector.size() == rhs.byte_vector.size());
-      auto data_ptr = reinterpret_cast<std::byte *>(byte_vector.data());
-      auto rhs_data_ptr =
-          reinterpret_cast<const std::byte *>(rhs.byte_vector.data());
+    Element &operator+=(const const_byte_stream_view_type &rhs) {
+      assert(byte_vector.size() == rhs.size());
+      auto *data_ptr = reinterpret_cast<std::byte *>(byte_vector.data());
+      const auto *rhs_data_ptr =
+          reinterpret_cast<const std::byte *>(rhs.data());
       for (size_t i = 0; i < byte_vector.size(); i++) {
         data_ptr[i] ^= rhs_data_ptr[i];
       }
@@ -25,9 +26,11 @@ namespace raid_fs::galois_field {
 
     // Since additive inverse is itself under XOR, subtraction is the same as
     // addition
-    Element &operator-=(const Element &rhs) { return operator+=(rhs); }
+    Element &operator-=(const const_byte_stream_view_type &rhs) {
+      return operator+=(rhs);
+    }
     void multiply_by_2() {
-      auto data_ptr = reinterpret_cast<uint8_t *>(byte_vector.data());
+      auto *data_ptr = reinterpret_cast<uint8_t *>(byte_vector.data());
       for (size_t i = 0; i < byte_vector.size(); i++) {
         data_ptr[i] = byte_multiply_by_2(data_ptr[i]);
       }

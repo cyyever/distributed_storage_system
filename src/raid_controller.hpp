@@ -301,12 +301,19 @@ namespace raid_fs {
           std::optional<block_data_type> Q_block_opt;
           if (read_res.size() == block_locations.size()) {
             if (P_node_idx_opt.has_value()) {
+              /* auto old_block = */
+              /*     byte_stream_type(read_res[P_node_idx_opt.value()]); */
               P_block_opt = std::move(read_res[P_node_idx_opt.value()]);
+              galois_field::Element sum(
+                  byte_stream_view_type(P_block_opt.value()));
               for (auto const &[physical_node_no, block] : read_res) {
                 if (physical_block_no != P_node_idx_opt.value()) {
-                  xor_blocks(P_block_opt.value(), block);
+                  sum += block;
                 }
               }
+              /* auto new_block = */
+              /*     byte_stream_type(read_res[P_node_idx_opt.value()]); */
+              /* assert(old_block != new_block); */
               row_map[P_node_idx_opt.value()] = P_block_opt.value();
             }
             if (Q_node_idx_opt.has_value()) {
