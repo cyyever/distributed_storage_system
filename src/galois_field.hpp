@@ -12,13 +12,23 @@ namespace raid_fs::galois_field {
   class Element {
 
   public:
+    explicit Element(size_t byte_count) {
+      if (byte_count == 0) {
+        LOG_ERROR("can't support empty byte vector");
+        throw std::runtime_error("can't support empty byte vector");
+      }
+      byte_vector.resize(byte_count, 0);
+    }
     explicit Element(byte_stream_view_type byte_vector_)
-        : byte_vector{byte_vector_} {
+        : byte_vector(byte_vector_.data(), byte_vector_.size()) {
       if (byte_vector.empty()) {
         LOG_ERROR("can't support empty byte vector");
         throw std::runtime_error("can't support empty byte vector");
       }
     }
+    byte_stream_type &get_byte_vector() { return byte_vector; }
+    const byte_stream_type &get_byte_vector() const { return byte_vector; }
+
     // Obtain additive inverse
     Element operator-() const { return *this; }
     Element &operator+=(const const_byte_stream_view_type &rhs) {
@@ -38,6 +48,15 @@ namespace raid_fs::galois_field {
         data_ptr[i] ^= rhs_data_ptr[i];
       }
       return *this;
+    }
+
+    Element operator*(uint8_t scalar) const {
+      auto res = *this;
+      auto *data_ptr = reinterpret_cast<uint8_t *>(res.byte_vector.data());
+      for (size_t i = 0; i < res.byte_vector.size(); i++) {
+        data_ptr[i] = byte_multiply(data_ptr[i], scalar);
+      }
+      return res;
     }
 
     // +=(rhs*scalar)
@@ -97,6 +116,29 @@ namespace raid_fs::galois_field {
       return res;
     }
 
+    class MultiplyInverseTable {
+    public:
+      MultiplyInverseTable() : table{} {
+        for (size_t i = 1; i < 256; i++) {
+          if (table[i] != 0) {
+            continue;
+          }
+          for (size_t j = 1; j < 256; j++) {
+            auto product = byte_multiply(i, j);
+            if (product == 1) {
+              assert(byte_multiply(j, i) == 1);
+              table[i] = j;
+              table[j] = i;
+              break;
+            }
+          }
+        }
+      }
+
+    private:
+      std::array<uint8_t, 256> table{};
+    };
+
     class GeneratorPowerTable {
     public:
       GeneratorPowerTable() {
@@ -109,6 +151,12 @@ namespace raid_fs::galois_field {
         power = Element::byte_multiply_by_2(power);
         assert(power == 1);
       }
+      uint8_t get_negative_power(int negative_exponent) {
+        assert(negative_exponent <= 0);
+        assert(negative_exponent > -256);
+        auto exponent = (negative_exponent + 2 * 255) % 255;
+        return table[exponent];
+      }
 
       uint8_t get_power(size_t exponent) {
         assert(exponent < 256);
@@ -120,8 +168,14 @@ namespace raid_fs::galois_field {
     };
 
     static inline GeneratorPowerTable generator_power_table;
+    static inline MultiplyInverseTable multiply_inverse_table;
 
   private:
-    byte_stream_view_type byte_vector;
+    byte_stream_type byte_vector;
   };
+
+  inline Element operator+(const Element &a, const Element &b) {
+    return Element(a) += b.get_byte_vector();
+  }
+
 } // namespace raid_fs::galois_field
