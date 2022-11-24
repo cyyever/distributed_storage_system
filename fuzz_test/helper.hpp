@@ -6,8 +6,8 @@
  */
 #pragma once
 
-#include "../config.hpp"
-#include "../raid_file_system.hpp"
+#include "config.hpp"
+#include "raid_file_system.hpp"
 
 inline ::raid_fs::RAIDFileSystem &get_file_system_impl() {
   static std::unique_ptr<::raid_fs::RAIDFileSystem> fs_ptr;

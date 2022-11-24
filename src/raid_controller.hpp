@@ -500,8 +500,7 @@ namespace raid_fs {
               row_map[P_node_idx] = P_block_opt.value();
             }
             if (!invalid_Q_node && old_blocks.contains(Q_node_idx)) {
-              galois_field::Element sum(
-                  byte_stream_view_type(old_blocks[Q_node_idx]));
+              galois_field::Element sum(old_blocks[Q_node_idx]);
               for (auto const &[physical_node_no, block] : row_map) {
                 if (physical_node_no != P_node_idx &&
                     physical_node_no != Q_node_idx) {
