@@ -178,7 +178,7 @@ namespace raid_fs {
     }
 
     std::expected<std::pair<block_data_type, INode>, Error>
-    read(uint64_t inode_no, LogicalAddressRange address_range) {
+    read(uint64_t inode_no, VirtualAddressRange address_range) {
       std::unique_lock metadata_lock(metadata_mutex);
       if (!is_valid_inode(inode_no)) {
         return std::unexpected(ERROR_INVALID_FD);
@@ -306,7 +306,7 @@ namespace raid_fs {
       auto const super_block = get_super_block();
       auto offset = super_block.bitmap_byte_offset + inode_no / 8;
       bool res = false;
-      iterate_disk(LogicalAddressRange(offset, 1),
+      iterate_disk(VirtualAddressRange(offset, 1),
                    [&res, inode_no](auto view, auto) {
                      auto new_byte = std::byte(view[0]);
                      std::byte mask{0b10000000};
@@ -483,7 +483,7 @@ namespace raid_fs {
       auto next_inode_offset = blk.next_inode_offset;
       assert(next_inode_offset < blk.inode_number / 8);
       auto res = allocate_block(
-          LogicalAddressRange(blk.bitmap_byte_offset + next_inode_offset,
+          VirtualAddressRange(blk.bitmap_byte_offset + next_inode_offset,
                               blk.inode_number / 8 - next_inode_offset));
       if (res.has_value()) {
         res.value() += next_inode_offset * 8;
@@ -491,7 +491,7 @@ namespace raid_fs {
         next_inode_offset %= (blk.inode_number / 8);
       } else if (next_inode_offset > 0) {
         res = allocate_block(
-            LogicalAddressRange(blk.bitmap_byte_offset, next_inode_offset));
+            VirtualAddressRange(blk.bitmap_byte_offset, next_inode_offset));
         next_inode_offset = 0;
       }
       if (res.has_value()) {
@@ -550,7 +550,7 @@ namespace raid_fs {
       }
       uint64_t written_bytes = 0;
       auto data_length = view.size();
-      LogicalAddressRange data_address_range{offset, data_length};
+      VirtualAddressRange data_address_range{offset, data_length};
       for (auto [piece_offset, piece_length] :
            data_address_range.split(block_size)) {
         auto data_block_ref_opt =
@@ -572,7 +572,7 @@ namespace raid_fs {
     }
 
     block_data_type read_data(const INode &inode,
-                              LogicalAddressRange address_range,
+                              VirtualAddressRange address_range,
                               bool check_res = false) {
       block_data_type data;
       if (address_range.offset < inode.size) {
@@ -732,7 +732,7 @@ namespace raid_fs {
                        uint64_t block_no_in_table) {
       bool res = false;
       iterate_disk(
-          LogicalAddressRange(bitmap_byte_offset + block_no_in_table / 8, 1),
+          VirtualAddressRange(bitmap_byte_offset + block_no_in_table / 8, 1),
           [&res, block_no_in_table](block_data_view_type view, size_t) {
             auto new_byte = std::byte(view[0]);
             std::byte mask{0b10000000};
@@ -749,7 +749,7 @@ namespace raid_fs {
     }
 
     std::optional<uint64_t>
-    allocate_block(LogicalAddressRange bitmap_address_range) {
+    allocate_block(VirtualAddressRange bitmap_address_range) {
       std::optional<uint64_t> res;
       iterate_disk(bitmap_address_range, [&res, &bitmap_address_range](
                                              block_data_view_type view,
@@ -780,7 +780,7 @@ namespace raid_fs {
     void iterate_file(INode &inode,
                       const std::function<std::pair<bool, bool>(
                           block_data_view_type data_view)> &callback) {
-      LogicalAddressRange address_range(0, inode.size);
+      VirtualAddressRange address_range(0, inode.size);
       for (auto [piece_offset, piece_length] :
            address_range.split(block_size)) {
         auto data_block_ref_opt =
@@ -803,7 +803,7 @@ namespace raid_fs {
       }
     }
 
-    void iterate_disk(LogicalAddressRange address_range,
+    void iterate_disk(VirtualAddressRange address_range,
                       const std::function<std::pair<bool, bool>(
                           block_data_view_type data_view, size_t)> &callback) {
       for (auto [piece_offset, piece_length] :
@@ -951,7 +951,7 @@ namespace raid_fs {
         assert(inode.size >= free_dir_entry_no * sizeof(DirEntry));
         auto data =
             read_data(inode,
-                      LogicalAddressRange(free_dir_entry_no * sizeof(DirEntry),
+                      VirtualAddressRange(free_dir_entry_no * sizeof(DirEntry),
                                           sizeof(DirEntry)),
                       true);
         first_dir_entry_ptr->inode_no =

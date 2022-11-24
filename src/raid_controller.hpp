@@ -28,8 +28,8 @@ namespace raid_fs {
   public:
     virtual ~RAIDController() = default;
     virtual size_t get_capacity() = 0;
-    virtual std::map<LogicalAddressRange, byte_stream_type>
-    read(const std::set<LogicalAddressRange> &data_ranges) = 0;
+    virtual std::map<VirtualAddressRange, byte_stream_type>
+    read(const std::set<VirtualAddressRange> &data_ranges) = 0;
     virtual std::set<uint64_t>
     write(std::map<uint64_t, byte_stream_type> blocks) = 0;
 
@@ -170,11 +170,11 @@ namespace raid_fs {
     ~RAID6Controller() override = default;
     size_t get_capacity() override { return capacity; }
 
-    std::map<LogicalAddressRange, byte_stream_type>
-    read(const std::set<LogicalAddressRange> &data_ranges) override {
+    std::map<VirtualAddressRange, byte_stream_type>
+    read(const std::set<VirtualAddressRange> &data_ranges) override {
       std::shared_lock lk(data_mutex);
       auto raid_blocks = read_blocks(get_raid_block_no(data_ranges));
-      std::map<LogicalAddressRange, byte_stream_type> results;
+      std::map<VirtualAddressRange, byte_stream_type> results;
       for (auto const &range : data_ranges) {
         bool const has_raid_block =
             std::ranges::all_of(get_raid_block_no({range}), [&](auto block_no) {
@@ -211,7 +211,7 @@ namespace raid_fs {
       std::set<uint64_t> block_result;
       for (auto const &[data_offset, block] : blocks) {
         bool const write_succ = std::ranges::all_of(
-            LogicalAddressRange(data_offset, block.size()).split(block_size),
+            VirtualAddressRange(data_offset, block.size()).split(block_size),
             [&](const auto &range) {
               return raid_res.contains(range.offset / block_size);
             });
@@ -224,7 +224,7 @@ namespace raid_fs {
 
   private:
     std::set<uint64_t>
-    get_raid_block_no(const std::set<LogicalAddressRange> &data_ranges) const {
+    get_raid_block_no(const std::set<VirtualAddressRange> &data_ranges) const {
       std::set<uint64_t> raid_block_no_set;
       for (auto const &range : data_ranges) {
         for (auto sub_range : range.split(block_size)) {

@@ -24,14 +24,14 @@ namespace raid_fs {
     uint64_t data_block_number;
 
   public:
-    LogicalAddressRange get_inode_bitmap_address_range() const {
-      return LogicalAddressRange(bitmap_byte_offset, inode_number / 8);
+    VirtualAddressRange get_inode_bitmap_address_range() const {
+      return VirtualAddressRange(bitmap_byte_offset, inode_number / 8);
     }
     uint64_t get_data_bitmap_byte_offset() const {
       return bitmap_byte_offset + inode_number / 8;
     }
-    LogicalAddressRange get_data_bitmap_address_range() const {
-      return LogicalAddressRange(get_data_bitmap_byte_offset(),
+    VirtualAddressRange get_data_bitmap_address_range() const {
+      return VirtualAddressRange(get_data_bitmap_byte_offset(),
                                  data_block_number / 8);
     }
   };

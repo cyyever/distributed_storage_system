@@ -19,11 +19,11 @@ namespace raid_fs {
   using const_block_data_view_type = const_byte_stream_view_type;
 
   // data offset and length
-  struct LogicalAddressRange {
-    LogicalAddressRange(uint64_t offset_, uint64_t length_)
+  struct VirtualAddressRange {
+    VirtualAddressRange(uint64_t offset_, uint64_t length_)
         : offset{offset_}, length{length_} {}
-    auto operator<=>(const LogicalAddressRange &rhs) const = default;
-    bool operator==(const LogicalAddressRange &rhs) const = default;
+    auto operator<=>(const VirtualAddressRange &rhs) const = default;
+    bool operator==(const VirtualAddressRange &rhs) const = default;
 
     auto split(uint64_t block_size) const {
       auto block_count =
@@ -36,13 +36,13 @@ namespace raid_fs {
                auto first_piece_length =
                    std::min(tmp_length, block_size - tmp_offset % block_size);
                if (idx == 0) {
-                 return LogicalAddressRange(tmp_offset, first_piece_length);
+                 return VirtualAddressRange(tmp_offset, first_piece_length);
                }
                auto second_piece_offset = tmp_offset + first_piece_length;
                auto piece_offset = second_piece_offset + (idx - 1) * block_size;
                auto piece_length = std::min(
                    block_size, (tmp_offset + tmp_length) - piece_offset);
-               return LogicalAddressRange(piece_offset, piece_length);
+               return VirtualAddressRange(piece_offset, piece_length);
              });
     }
     uint64_t offset{};

@@ -7,11 +7,11 @@
 
 #include <cyy/naive_lib/log/log.hpp>
 #include <doctest/doctest.h>
-#include <spdlog/fmt/fmt.h>
 #include <grpc/grpc.h>
 #include <grpcpp/client_context.h>
 #include <grpcpp/create_channel.h>
 #include <grpcpp/security/credentials.h>
+#include <spdlog/fmt/fmt.h>
 
 #include "block.hpp"
 #include "config.hpp"
