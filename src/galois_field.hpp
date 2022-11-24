@@ -157,14 +157,14 @@ namespace raid_fs::galois_field {
         power = Element::byte_multiply_by_2(power);
         assert(power == 1);
       }
-      uint8_t get_negative_power(int negative_exponent) {
+      uint8_t get_negative_power(int negative_exponent) const {
         assert(negative_exponent <= 0);
         assert(negative_exponent > -256);
         auto exponent = (negative_exponent + 2 * 255) % 255;
         return table[exponent];
       }
 
-      uint8_t get_power(size_t exponent) {
+      uint8_t get_power(size_t exponent) const {
         assert(exponent < 256);
         return table[exponent];
       }
