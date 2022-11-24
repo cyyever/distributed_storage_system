@@ -214,23 +214,23 @@ namespace raid_fs {
       std::unique_lock metadata_lock(metadata_mutex);
       auto const super_block = get_super_block();
       size_t used_inode_number = 0;
-      iterate_bytes(super_block.get_inode_bitmap_address_range(),
-                    [&used_inode_number](auto view, auto) {
-                      for (auto const &byte : view) {
-                        used_inode_number +=
-                            std::popcount(static_cast<unsigned char>(byte));
-                      }
-                      return std::pair<bool, bool>{false, false};
-                    });
+      iterate_disk(super_block.get_inode_bitmap_address_range(),
+                   [&used_inode_number](auto view, auto) {
+                     for (auto const &byte : view) {
+                       used_inode_number +=
+                           std::popcount(static_cast<unsigned char>(byte));
+                     }
+                     return std::pair<bool, bool>{false, false};
+                   });
       size_t used_data_block_number = 0;
-      iterate_bytes(super_block.get_data_bitmap_address_range(),
-                    [&used_data_block_number](auto view, auto) {
-                      for (auto const &byte : view) {
-                        used_data_block_number +=
-                            std::popcount(static_cast<unsigned char>(byte));
-                      }
-                      return std::pair<bool, bool>{false, false};
-                    });
+      iterate_disk(super_block.get_data_bitmap_address_range(),
+                   [&used_data_block_number](auto view, auto) {
+                     for (auto const &byte : view) {
+                       used_data_block_number +=
+                           std::popcount(static_cast<unsigned char>(byte));
+                     }
+                     return std::pair<bool, bool>{false, false};
+                   });
       return {super_block, used_inode_number, used_data_block_number};
     }
 
@@ -306,14 +306,14 @@ namespace raid_fs {
       auto const super_block = get_super_block();
       auto offset = super_block.bitmap_byte_offset + inode_no / 8;
       bool res = false;
-      iterate_bytes(LogicalAddressRange(offset, 1),
-                    [&res, inode_no](auto view, auto) {
-                      auto new_byte = std::byte(view[0]);
-                      std::byte mask{0b10000000};
-                      mask >>= (inode_no % 8);
-                      res = ((mask & new_byte) == mask);
-                      return std::pair<bool, bool>{false, false};
-                    });
+      iterate_disk(LogicalAddressRange(offset, 1),
+                   [&res, inode_no](auto view, auto) {
+                     auto new_byte = std::byte(view[0]);
+                     std::byte mask{0b10000000};
+                     mask >>= (inode_no % 8);
+                     res = ((mask & new_byte) == mask);
+                     return std::pair<bool, bool>{false, false};
+                   });
       return res;
     }
     std::pair<INode *, BlockCache::value_reference>
@@ -731,7 +731,7 @@ namespace raid_fs {
     bool release_block(uint64_t bitmap_byte_offset,
                        uint64_t block_no_in_table) {
       bool res = false;
-      iterate_bytes(
+      iterate_disk(
           LogicalAddressRange(bitmap_byte_offset + block_no_in_table / 8, 1),
           [&res, block_no_in_table](block_data_view_type view, size_t) {
             auto new_byte = std::byte(view[0]);
@@ -751,9 +751,9 @@ namespace raid_fs {
     std::optional<uint64_t>
     allocate_block(LogicalAddressRange bitmap_address_range) {
       std::optional<uint64_t> res;
-      iterate_bytes(bitmap_address_range, [&res, &bitmap_address_range](
-                                              block_data_view_type view,
-                                              size_t byte_offset) {
+      iterate_disk(bitmap_address_range, [&res, &bitmap_address_range](
+                                             block_data_view_type view,
+                                             size_t byte_offset) {
         std::byte zero_byte{0b00000000};
         for (size_t i = 0; i < view.size(); i++) {
           if (static_cast<unsigned char>(view[i]) < 255) {
@@ -777,9 +777,35 @@ namespace raid_fs {
       return res;
     }
 
-    void iterate_bytes(LogicalAddressRange address_range,
-                       const std::function<std::pair<bool, bool>(
-                           block_data_view_type data_view, size_t)> &callback) {
+    void iterate_file(INode &inode,
+                      const std::function<std::pair<bool, bool>(
+                          block_data_view_type data_view)> &callback) {
+      LogicalAddressRange address_range(0, inode.size);
+      for (auto [piece_offset, piece_length] :
+           address_range.split(block_size)) {
+        auto data_block_ref_opt =
+            get_mutable_data_block_of_file(inode, piece_offset);
+        assert(data_block_ref_opt.has_value());
+        if (!data_block_ref_opt.has_value()) {
+          LOG_ERROR("can access data offset {}", piece_offset);
+          throw std::runtime_error(
+              fmt::format("can access data offset {}", piece_offset));
+        }
+        auto [changed, finish] = callback(block_data_view_type(
+            &data_block_ref_opt.value()->data[piece_offset % block_size],
+            piece_length));
+        if (!changed) {
+          data_block_ref_opt.value().cancel_writeback();
+        }
+        if (finish) {
+          return;
+        }
+      }
+    }
+
+    void iterate_disk(LogicalAddressRange address_range,
+                      const std::function<std::pair<bool, bool>(
+                          block_data_view_type data_view, size_t)> &callback) {
       for (auto [piece_offset, piece_length] :
            address_range.split(block_size)) {
         auto block_no = piece_offset / block_size;
@@ -954,43 +980,35 @@ namespace raid_fs {
       assert(inode.size != 0);
       assert(inode.size % sizeof(DirEntry) == 0);
       uint64_t remain_size = inode.size;
+      assert(remain_size != 0);
       bool finish = false;
       size_t entry_cnt = 0;
-      for (auto block_ptr : inode.block_ptrs) {
-        assert(block_ptr != 0);
-        uint64_t length = std::min(block_size, remain_size);
-        iterate_bytes(
-            LogicalAddressRange(block_ptr * block_size, length),
-            [&finish, &dir_entry_callback, &entry_cnt](
-                block_data_view_type view, size_t) -> std::pair<bool, bool> {
-              assert(view.size() % sizeof(DirEntry) == 0);
-              DirEntry *dir_entry_ptr =
-                  reinterpret_cast<DirEntry *>(view.data());
-              bool save = false;
-              for (size_t i = 0; i < view.size() / sizeof(DirEntry);
-                   i++, entry_cnt++) {
-                if (dir_entry_ptr[i].type == file_type::free_dir_entry ||
-                    dir_entry_ptr[i].type == file_type::free_dir_entry_head) {
-                  continue;
-                }
-                auto res = dir_entry_callback(entry_cnt, dir_entry_ptr[i]);
-                if (res.first) {
-                  save = true;
-                }
-                if (res.second) {
-                  finish = true;
-                }
-                if (finish) {
-                  return {save, true};
-                }
+      iterate_file(
+          inode,
+          [&finish, &dir_entry_callback,
+           &entry_cnt](block_data_view_type view) -> std::pair<bool, bool> {
+            assert(view.size() % sizeof(DirEntry) == 0);
+            DirEntry *dir_entry_ptr = reinterpret_cast<DirEntry *>(view.data());
+            bool save = false;
+            for (size_t i = 0; i < view.size() / sizeof(DirEntry);
+                 i++, entry_cnt++) {
+              if (dir_entry_ptr[i].type == file_type::free_dir_entry ||
+                  dir_entry_ptr[i].type == file_type::free_dir_entry_head) {
+                continue;
               }
-              return {save, false};
-            });
-        remain_size -= length;
-        if (!remain_size || finish) {
-          break;
-        }
-      }
+              auto res = dir_entry_callback(entry_cnt, dir_entry_ptr[i]);
+              if (res.first) {
+                save = true;
+              }
+              if (res.second) {
+                finish = true;
+              }
+              if (finish) {
+                return {save, true};
+              }
+            }
+            return {save, false};
+          });
     }
 
   private:

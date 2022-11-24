@@ -11,5 +11,5 @@ foreach(test_source IN LISTS test_sources)
     ${test_prog} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/.."
                          "${CMAKE_CURRENT_LIST_DIR}/../src")
   target_link_libraries(${test_prog} PUBLIC ${LIBS})
-  add_fuzzing(TARGET ${test_prog} ASAN ON TSAN ON)
+  add_fuzzing(TARGET ${test_prog} ASAN ON UBSAN ON TSAN OFF)
 endforeach()
