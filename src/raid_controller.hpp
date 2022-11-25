@@ -360,7 +360,7 @@ namespace raid_fs {
                   physical_node_no != P_node_idx) {
                 assert(!block_view.empty());
                 cnt++;
-                sum.multiply_subtract(
+                sum.subtract_multiple(
                     block_view, galois_field::generator_power_table.get_power(
                                     physical_node_no));
               }
@@ -397,7 +397,7 @@ namespace raid_fs {
                 assert(!block_view.empty());
                 cnt++;
                 P_xy_block += block_view;
-                Q_xy_block.multiply_add(
+                Q_xy_block.add_multiple(
                     block_view, galois_field::generator_power_table.get_power(
                                     physical_node_no));
               }
@@ -483,12 +483,14 @@ namespace raid_fs {
           if (std::ranges::includes(std::views::keys(old_blocks),
                                     row_data_nodes)) {
             if (!invalid_P_node && old_blocks.contains(P_node_idx)) {
-              galois_field::Vector sum(old_blocks[P_node_idx]);
+              galois_field::Vector sum(
+                  byte_stream_view_type(old_blocks[P_node_idx]));
               for (auto const &[physical_node_no, block] : row_map) {
                 if (physical_node_no != P_node_idx &&
                     physical_node_no != Q_node_idx) {
                   assert(!block.empty());
-                  auto const &old_block = old_blocks[physical_node_no];
+                  const_byte_stream_view_type old_block =
+                      old_blocks[physical_node_no];
                   assert(!old_block.empty());
                   sum -= old_block;
                   sum += block;
@@ -498,17 +500,19 @@ namespace raid_fs {
               row_map[P_node_idx] = P_block_opt.value();
             }
             if (!invalid_Q_node && old_blocks.contains(Q_node_idx)) {
-              galois_field::Vector sum(old_blocks[Q_node_idx]);
+              galois_field::Vector sum(
+                  byte_stream_view_type(old_blocks[Q_node_idx]));
               for (auto const &[physical_node_no, block] : row_map) {
                 if (physical_node_no != P_node_idx &&
                     physical_node_no != Q_node_idx) {
                   assert(!block.empty());
-                  auto const &old_block = old_blocks[physical_node_no];
+                  const_byte_stream_view_type old_block =
+                      old_blocks[physical_node_no];
                   assert(!old_block.empty());
-                  sum.multiply_subtract(
+                  sum.subtract_multiple(
                       old_block, galois_field::generator_power_table.get_power(
                                      physical_node_no));
-                  sum.multiply_add(
+                  sum.add_multiple(
                       block, galois_field::generator_power_table.get_power(
                                  physical_node_no));
                 }

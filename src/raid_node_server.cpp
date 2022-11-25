@@ -22,8 +22,8 @@ namespace raid_fs {
   public:
     explicit RAIDNodeServiceImpl(const RAIDConfig &config, size_t service_id,
                                  bool random_failure_ = false)
-        : disk_ptr(get_disk(config, service_id)),
-          random_failure{random_failure_} {
+        : disk_ptr(get_disk(config, service_id)), random_failure{
+                                                      random_failure_} {
       if (random_failure) {
         LOG_WARN("RAID node {} will fail randomly", service_id);
       }

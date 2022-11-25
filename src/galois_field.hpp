@@ -4,6 +4,8 @@
  * \brief Implementation of Galois field GF(2^8) for RAID 6
  */
 
+#include <variant>
+
 #include <cyy/naive_lib/log/log.hpp>
 #include <spdlog/fmt/fmt.h>
 
@@ -121,91 +123,110 @@ namespace raid_fs::galois_field {
   class Vector {
 
   public:
-    explicit Vector(size_t byte_count) {
+    Vector(size_t byte_count) {
       if (byte_count == 0) {
         LOG_ERROR("can't support empty byte vector");
         throw std::runtime_error("can't support empty byte vector");
       }
-      byte_vector.resize(byte_count, 0);
+      byte_stream_type stream(byte_count, 0);
+      byte_vector = stream;
     }
-    explicit Vector(byte_stream_view_type byte_vector_)
-        : byte_vector(byte_vector_.data(), byte_vector_.size()) {
-      if (byte_vector.empty()) {
+    Vector(byte_stream_view_type byte_vector_) : byte_vector(byte_vector_) {
+      if (byte_vector_.empty()) {
         LOG_ERROR("can't support empty byte vector");
         throw std::runtime_error("can't support empty byte vector");
       }
     }
-    byte_stream_type &get_byte_vector() { return byte_vector; }
-    const byte_stream_type &get_byte_vector() const { return byte_vector; }
-
-    // Obtain additive inverse
-    Vector operator-() const { return *this; }
-    Vector &operator+=(const const_byte_stream_view_type &rhs) {
-      assert(byte_vector.size() == rhs.size());
-      if (byte_vector.size() != rhs.size()) {
-        LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
-                  byte_vector.size(), rhs.size());
-
-        throw std::runtime_error(fmt ::format(
-            "can't add byte vectors with different sizes: {} and {}",
-            byte_vector.size(), rhs.size()));
+    Vector(const_byte_stream_view_type byte_vector_)
+        : byte_vector(byte_vector_) {
+      if (byte_vector_.empty()) {
+        LOG_ERROR("can't support empty byte vector");
+        throw std::runtime_error("can't support empty byte vector");
       }
-      auto *data_ptr = reinterpret_cast<Element *>(byte_vector.data());
-      const auto *rhs_data_ptr = reinterpret_cast<const Element *>(rhs.data());
-      for (size_t i = 0; i < byte_vector.size(); i++) {
-        data_ptr[i] += rhs_data_ptr[i];
+    }
+    byte_stream_type &get_byte_vector() {
+      return std::get<byte_stream_type>(byte_vector);
+    }
+
+    Vector &operator+=(const Vector &rhs) {
+      check_rhs(rhs);
+      for (size_t i = 0; i < size(); i++) {
+        data()[i] += rhs.data()[i];
       }
       return *this;
     }
 
     Vector operator*(Element scalar) const {
       auto res = *this;
-      auto *data_ptr = reinterpret_cast<Element *>(res.byte_vector.data());
-      for (size_t i = 0; i < res.byte_vector.size(); i++) {
-        data_ptr[i] *= scalar;
+      for (size_t i = 0; i < size(); i++) {
+        res.data()[i] *= scalar;
       }
       return res;
     }
 
     // +=(rhs*scalar)
-    Vector &multiply_add(const const_byte_stream_view_type &rhs,
-                         Element scalar) {
-      assert(byte_vector.size() == rhs.size());
-      if (byte_vector.size() != rhs.size()) {
-        LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
-                  byte_vector.size(), rhs.size());
-
-        throw std::runtime_error(fmt ::format(
-            "can't add byte vectors with different sizes: {} and {}",
-            byte_vector.size(), rhs.size()));
-      }
-      assert(byte_vector.size() == rhs.size());
-      auto *data_ptr = reinterpret_cast<Element *>(byte_vector.data());
-      const auto *rhs_data_ptr = reinterpret_cast<const Element *>(rhs.data());
-      for (size_t i = 0; i < byte_vector.size(); i++) {
-        data_ptr[i] += rhs_data_ptr[i] * scalar;
+    Vector &add_multiple(const Vector &rhs, Element scalar) {
+      for (size_t i = 0; i < size(); i++) {
+        data()[i] += rhs.data()[i] * scalar;
       }
       return *this;
     }
 
     // -=(rhs*scalar)
-    Vector &multiply_subtract(const const_byte_stream_view_type &rhs,
-                              Element scalar) {
-      return multiply_add(rhs, scalar);
+    Vector &subtract_multiple(const Vector &rhs, Element scalar) {
+      return add_multiple(rhs, scalar);
     }
 
     // Since additive inverse is itself under XOR, subtraction is the same as
     // addition
-    Vector &operator-=(const const_byte_stream_view_type &rhs) {
-      return operator+=(rhs);
+    Vector &operator-=(const Vector &rhs) { return operator+=(rhs); }
+
+  private:
+    void check_rhs(const Vector &rhs) {
+
+      assert(size() == rhs.size());
+      if (size() != rhs.size()) {
+        LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
+                  size(), rhs.size());
+
+        throw std::runtime_error(fmt ::format(
+            "can't add byte vectors with different sizes: {} and {}", size(),
+            rhs.size()));
+      }
+    }
+    Element *data() {
+      if (auto *ptr = std::get_if<byte_stream_type>(&byte_vector))
+        return reinterpret_cast<Element *>(ptr->data());
+      else if (auto *ptr = std::get_if<byte_stream_view_type>(&byte_vector))
+        return reinterpret_cast<Element *>(ptr->data());
+      else {
+        throw std::runtime_error("bad access");
+      }
+    }
+    const Element *data() const {
+      if (const auto *ptr = std::get_if<byte_stream_type>(&byte_vector))
+        return reinterpret_cast<const Element *>(ptr->size());
+      else if (auto *ptr = std::get_if<byte_stream_view_type>(&byte_vector))
+        return reinterpret_cast<const Element *>(ptr->data());
+      else
+        return reinterpret_cast<const Element *>(
+            std::get<const_byte_stream_view_type>(byte_vector).data());
+    }
+    size_t size() const {
+      if (const auto *ptr = std::get_if<byte_stream_type>(&byte_vector))
+        return ptr->size();
+      else if (auto *ptr = std::get_if<byte_stream_view_type>(&byte_vector))
+        return ptr->size();
+      else
+        return std::get<byte_stream_view_type>(byte_vector).size();
     }
 
   private:
-    byte_stream_type byte_vector;
+    std::variant<byte_stream_view_type, const_byte_stream_view_type,
+                 byte_stream_type>
+        byte_vector;
   };
 
-  inline Vector operator+(const Vector &a, const Vector &b) {
-    return Vector(a) += b.get_byte_vector();
-  }
+  inline Vector operator+(Vector a, const Vector &b) { return a += b; }
 
 } // namespace raid_fs::galois_field
