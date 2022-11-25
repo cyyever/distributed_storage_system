@@ -89,11 +89,8 @@ namespace raid_fs {
         parity_ports[i] = port;
       }
       random_failure_data_nodes =
-          std::min(sub_yaml_node["random_failure_data_nodes"].as<size_t>(),
+          std::min(sub_yaml_node["random_error_number"].as<size_t>(),
                    data_ports.size());
-      random_failure_parity_nodes =
-          std::min(sub_yaml_node["random_failure_parity_nodes"].as<size_t>(),
-                   parity_ports.size());
 
       block_size = parse_size(sub_yaml_node, "block_size");
       if (disk_capacity % block_size != 0) {
@@ -105,7 +102,6 @@ namespace raid_fs {
     std::vector<uint16_t> data_ports;
     std::array<uint16_t, 2> parity_ports{};
     size_t random_failure_data_nodes{};
-    size_t random_failure_parity_nodes{};
     size_t block_size{};
     bool use_memory_disk{};
     std::string disk_path_prefix{};
