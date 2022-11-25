@@ -412,7 +412,7 @@ namespace raid_fs {
                          -x) +
                  (P_block + P_xy_block) * tmp_power) *
                 galois_field::multiply_inverse_table.get_inverse(
-                    galois_field::Vector::byte_addition(tmp_power, 1));
+                    tmp_power + galois_field::Element(1));
 
             auto y_block = P_block + P_xy_block + x_block;
 

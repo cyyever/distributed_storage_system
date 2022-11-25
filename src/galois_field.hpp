@@ -15,6 +15,7 @@ namespace raid_fs::galois_field {
   public:
     Element(uint8_t element_ = 0) : element(element_) {}
 
+    uint8_t value() const { return element; }
     bool operator==(const Element &rhs) const = default;
 
     // Obtain additive inverse
@@ -43,7 +44,7 @@ namespace raid_fs::galois_field {
 
     // Since additive inverse is itself under XOR, subtraction is the same as
     // addition
-    Element &operator-=(uint8_t rhs) { return operator+=(rhs); }
+    Element &operator-=(Element rhs) { return operator+=(rhs); }
 
     static inline constexpr uint8_t multiply_by_2(uint8_t b) {
       return (b << 1) ^ ((b & 0x80) ? 0x1d : 0);
@@ -77,9 +78,9 @@ namespace raid_fs::galois_field {
         }
       }
     }
-    uint8_t get_inverse(uint8_t a) const {
-      assert(a != 0);
-      return table[a];
+    Element get_inverse(Element a) const {
+      assert(a.value() != 0);
+      return table[a.value()];
     }
 
   private:
@@ -98,14 +99,14 @@ namespace raid_fs::galois_field {
       power = Element::multiply_by_2(power);
       assert(power == 1);
     }
-    uint8_t get_negative_power(int negative_exponent) const {
+    Element get_negative_power(int negative_exponent) const {
       assert(negative_exponent <= 0);
       assert(negative_exponent > -256);
       auto exponent = (negative_exponent + 2 * 255) % 255;
       return table[exponent];
     }
 
-    uint8_t get_power(size_t exponent) const {
+    Element get_power(size_t exponent) const {
       assert(exponent < 256);
       return table[exponent];
     }
@@ -140,7 +141,7 @@ namespace raid_fs::galois_field {
     // Obtain additive inverse
     Vector operator-() const { return *this; }
     Vector &operator+=(const const_byte_stream_view_type &rhs) {
-      assert(rhs.size() > 0);
+      assert(byte_vector.size() == rhs.size());
       if (byte_vector.size() != rhs.size()) {
         LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
                   byte_vector.size(), rhs.size());
@@ -149,28 +150,26 @@ namespace raid_fs::galois_field {
             "can't add byte vectors with different sizes: {} and {}",
             byte_vector.size(), rhs.size()));
       }
-      assert(byte_vector.size() == rhs.size());
-      auto *data_ptr = reinterpret_cast<std::byte *>(byte_vector.data());
-      const auto *rhs_data_ptr =
-          reinterpret_cast<const std::byte *>(rhs.data());
+      auto *data_ptr = reinterpret_cast<Element *>(byte_vector.data());
+      const auto *rhs_data_ptr = reinterpret_cast<const Element *>(rhs.data());
       for (size_t i = 0; i < byte_vector.size(); i++) {
-        data_ptr[i] ^= rhs_data_ptr[i];
+        data_ptr[i] += rhs_data_ptr[i];
       }
       return *this;
     }
 
-    Vector operator*(uint8_t scalar) const {
+    Vector operator*(Element scalar) const {
       auto res = *this;
-      auto *data_ptr = reinterpret_cast<uint8_t *>(res.byte_vector.data());
+      auto *data_ptr = reinterpret_cast<Element *>(res.byte_vector.data());
       for (size_t i = 0; i < res.byte_vector.size(); i++) {
-        data_ptr[i] = byte_multiply(data_ptr[i], scalar);
+        data_ptr[i] *= scalar;
       }
       return res;
     }
 
     // +=(rhs*scalar)
     Vector &multiply_add(const const_byte_stream_view_type &rhs,
-                         uint8_t scalar) {
+                         Element scalar) {
       assert(byte_vector.size() == rhs.size());
       if (byte_vector.size() != rhs.size()) {
         LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
@@ -181,17 +180,17 @@ namespace raid_fs::galois_field {
             byte_vector.size(), rhs.size()));
       }
       assert(byte_vector.size() == rhs.size());
-      auto *data_ptr = reinterpret_cast<uint8_t *>(byte_vector.data());
-      const auto *rhs_data_ptr = reinterpret_cast<const uint8_t *>(rhs.data());
+      auto *data_ptr = reinterpret_cast<Element *>(byte_vector.data());
+      const auto *rhs_data_ptr = reinterpret_cast<const Element *>(rhs.data());
       for (size_t i = 0; i < byte_vector.size(); i++) {
-        data_ptr[i] ^= byte_multiply(rhs_data_ptr[i], scalar);
+        data_ptr[i] += rhs_data_ptr[i] * scalar;
       }
       return *this;
     }
 
     // -=(rhs*scalar)
     Vector &multiply_subtract(const const_byte_stream_view_type &rhs,
-                              uint8_t scalar) {
+                              Element scalar) {
       return multiply_add(rhs, scalar);
     }
 
@@ -199,31 +198,6 @@ namespace raid_fs::galois_field {
     // addition
     Vector &operator-=(const const_byte_stream_view_type &rhs) {
       return operator+=(rhs);
-    }
-    void multiply_by_2() {
-      auto *data_ptr = reinterpret_cast<uint8_t *>(byte_vector.data());
-      for (size_t i = 0; i < byte_vector.size(); i++) {
-        data_ptr[i] = byte_multiply_by_2(data_ptr[i]);
-      }
-    }
-    static inline uint8_t byte_addition(uint8_t a, uint8_t b) { return a ^ b; }
-
-    static inline uint8_t byte_multiply_by_2(uint8_t b) {
-      return (b << 1) ^ ((b & 0x80) ? 0x1d : 0);
-    }
-    static uint8_t byte_multiply(uint8_t a, uint8_t b) {
-      uint8_t res = 0;
-      for (size_t i = 0; i < 7; i++) {
-        if (b & 0x80) {
-          res ^= a;
-        }
-        res = byte_multiply_by_2(res);
-        b <<= 1;
-      }
-      if (b & 0x80) {
-        res ^= a;
-      }
-      return res;
     }
 
   private:
