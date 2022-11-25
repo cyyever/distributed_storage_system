@@ -9,6 +9,114 @@
 
 #include "block.hpp"
 namespace raid_fs::galois_field {
+
+  class Element {
+
+  public:
+    Element(uint8_t element_ = 0) : element(element_) {}
+
+    bool operator==(const Element &rhs) const = default;
+
+    // Obtain additive inverse
+    Element operator-() const { return *this; }
+    Element &operator+=(Element rhs) {
+      element ^= rhs.element;
+      return *this;
+    }
+
+    Element &operator*=(Element rhs) {
+      uint8_t res = 0;
+      auto rhs_value = rhs.element;
+      for (size_t i = 0; i < 7; i++) {
+        if (rhs_value & 0x80) {
+          res ^= element;
+        }
+        res = multiply_by_2(res);
+        rhs_value <<= 1;
+      }
+      if (rhs_value & 0x80) {
+        res ^= element;
+      }
+      element = res;
+      return *this;
+    }
+
+    // Since additive inverse is itself under XOR, subtraction is the same as
+    // addition
+    Element &operator-=(uint8_t rhs) { return operator+=(rhs); }
+
+    static inline constexpr uint8_t multiply_by_2(uint8_t b) {
+      return (b << 1) ^ ((b & 0x80) ? 0x1d : 0);
+    }
+
+  private:
+    uint8_t element;
+  };
+  static inline Element operator+(const Element &a, const Element &b) {
+    return Element(a) += b;
+  }
+  static inline Element operator*(const Element &a, const Element &b) {
+    return Element(a) *= b;
+  }
+
+  class MultiplyInverseTable {
+  public:
+    MultiplyInverseTable() : table{} {
+      for (size_t i = 1; i < 256; i++) {
+        if (table[i] != 0) {
+          continue;
+        }
+        for (size_t j = 1; j < 256; j++) {
+          auto product = Element(i) * Element(j);
+          if (product == 1) {
+            assert(Element(j) * Element(i) == 1);
+            table[i] = j;
+            table[j] = i;
+            break;
+          }
+        }
+      }
+    }
+    uint8_t get_inverse(uint8_t a) const {
+      assert(a != 0);
+      return table[a];
+    }
+
+  private:
+    std::array<uint8_t, 256> table{};
+  };
+
+  class GeneratorPowerTable {
+  public:
+    GeneratorPowerTable() {
+      uint8_t power = 1;
+      table[0] = power;
+      for (size_t i = 1; i < 255; i++) {
+        power = Element::multiply_by_2(power);
+        table[i] = power;
+      }
+      power = Element::multiply_by_2(power);
+      assert(power == 1);
+    }
+    uint8_t get_negative_power(int negative_exponent) const {
+      assert(negative_exponent <= 0);
+      assert(negative_exponent > -256);
+      auto exponent = (negative_exponent + 2 * 255) % 255;
+      return table[exponent];
+    }
+
+    uint8_t get_power(size_t exponent) const {
+      assert(exponent < 256);
+      return table[exponent];
+    }
+
+  private:
+    std::array<uint8_t, 255> table{};
+  };
+
+  static inline GeneratorPowerTable generator_power_table;
+  static inline MultiplyInverseTable multiply_inverse_table;
+
   class Vector {
 
   public:
@@ -62,7 +170,7 @@ namespace raid_fs::galois_field {
 
     // +=(rhs*scalar)
     Vector &multiply_add(const const_byte_stream_view_type &rhs,
-                          uint8_t scalar) {
+                         uint8_t scalar) {
       assert(byte_vector.size() == rhs.size());
       if (byte_vector.size() != rhs.size()) {
         LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
@@ -83,7 +191,7 @@ namespace raid_fs::galois_field {
 
     // -=(rhs*scalar)
     Vector &multiply_subtract(const const_byte_stream_view_type &rhs,
-                               uint8_t scalar) {
+                              uint8_t scalar) {
       return multiply_add(rhs, scalar);
     }
 
@@ -117,64 +225,6 @@ namespace raid_fs::galois_field {
       }
       return res;
     }
-
-    class MultiplyInverseTable {
-    public:
-      MultiplyInverseTable() : table{} {
-        for (size_t i = 1; i < 256; i++) {
-          if (table[i] != 0) {
-            continue;
-          }
-          for (size_t j = 1; j < 256; j++) {
-            auto product = byte_multiply(i, j);
-            if (product == 1) {
-              assert(byte_multiply(j, i) == 1);
-              table[i] = j;
-              table[j] = i;
-              break;
-            }
-          }
-        }
-      }
-      uint8_t get_inverse(uint8_t a) const {
-        assert(a != 0);
-        return table[a];
-      }
-
-    private:
-      std::array<uint8_t, 256> table{};
-    };
-
-    class GeneratorPowerTable {
-    public:
-      GeneratorPowerTable() {
-        uint8_t power = 1;
-        table[0] = power;
-        for (size_t i = 1; i < 255; i++) {
-          power = Vector::byte_multiply_by_2(power);
-          table[i] = power;
-        }
-        power = Vector::byte_multiply_by_2(power);
-        assert(power == 1);
-      }
-      uint8_t get_negative_power(int negative_exponent) const {
-        assert(negative_exponent <= 0);
-        assert(negative_exponent > -256);
-        auto exponent = (negative_exponent + 2 * 255) % 255;
-        return table[exponent];
-      }
-
-      uint8_t get_power(size_t exponent) const {
-        assert(exponent < 256);
-        return table[exponent];
-      }
-
-    private:
-      std::array<uint8_t, 255> table{};
-    };
-
-    static inline GeneratorPowerTable generator_power_table;
-    static inline MultiplyInverseTable multiply_inverse_table;
 
   private:
     byte_stream_type byte_vector;

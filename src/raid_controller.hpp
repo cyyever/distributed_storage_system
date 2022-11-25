@@ -361,9 +361,8 @@ namespace raid_fs {
                 assert(!block_view.empty());
                 cnt++;
                 sum.multiply_subtract(
-                    block_view,
-                    galois_field::Vector::generator_power_table.get_power(
-                        physical_node_no));
+                    block_view, galois_field::generator_power_table.get_power(
+                                    physical_node_no));
               }
             }
             assert(cnt + 1 == data_node_number);
@@ -399,21 +398,20 @@ namespace raid_fs {
                 cnt++;
                 P_xy_block += block_view;
                 Q_xy_block.multiply_add(
-                    block_view,
-                    galois_field::Vector::generator_power_table.get_power(
-                        physical_node_no));
+                    block_view, galois_field::generator_power_table.get_power(
+                                    physical_node_no));
               }
             }
 
             assert(cnt + 2 == data_node_number);
             auto tmp_power =
-                galois_field::Vector::generator_power_table.get_power(y - x);
+                galois_field::generator_power_table.get_power(y - x);
             auto x_block =
                 ((Q_block + Q_xy_block) *
-                     galois_field::Vector::generator_power_table
-                         .get_negative_power(-x) +
+                     galois_field::generator_power_table.get_negative_power(
+                         -x) +
                  (P_block + P_xy_block) * tmp_power) *
-                galois_field::Vector::multiply_inverse_table.get_inverse(
+                galois_field::multiply_inverse_table.get_inverse(
                     galois_field::Vector::byte_addition(tmp_power, 1));
 
             auto y_block = P_block + P_xy_block + x_block;
@@ -508,13 +506,11 @@ namespace raid_fs {
                   auto const &old_block = old_blocks[physical_node_no];
                   assert(!old_block.empty());
                   sum.multiply_subtract(
-                      old_block,
-                      galois_field::Vector::generator_power_table.get_power(
-                          physical_node_no));
+                      old_block, galois_field::generator_power_table.get_power(
+                                     physical_node_no));
                   sum.multiply_add(
-                      block,
-                      galois_field::Vector::generator_power_table.get_power(
-                          physical_node_no));
+                      block, galois_field::generator_power_table.get_power(
+                                 physical_node_no));
                 }
               }
               Q_block_opt = std::move(sum.get_byte_vector());
