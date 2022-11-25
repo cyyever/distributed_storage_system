@@ -115,14 +115,6 @@ int main(int argc, char **argv) {
         std::inserter(random_failure_ports, random_failure_ports.begin()),
         cfg.random_failure_data_nodes, std::mt19937{std::random_device{}()});
   }
-  if (cfg.random_failure_parity_nodes > 0) {
-    throw std::runtime_error(
-        "failure parity nodes are not supported currently");
-    /* std::sample( */
-    /*     cfg.parity_ports.begin(), cfg.parity_ports.end(), */
-    /*     std::inserter(random_failure_ports, random_failure_ports.begin()), */
-    /*     cfg.random_failure_parity_nodes, std::mt19937{std::random_device{}()}); */
-  }
 
   for (auto port : ports) {
     std::string server_address(fmt::format("0.0.0.0:{}", port));
