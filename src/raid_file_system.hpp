@@ -338,6 +338,7 @@ namespace raid_fs {
       {
         LOG_WARN("initialize file system");
         auto block_ref = get_mutable_block(super_block_no);
+        memset(block_ref->data.data(), 0, block_size);
         auto &blk = block_ref->as_super_block();
         strcpy(blk.fs_type, raid_fs_type);
         blk.fs_version = 0;
@@ -948,7 +949,7 @@ namespace raid_fs {
       assert(first_dir_entry_ptr->type == file_type::free_dir_entry_head);
       auto free_dir_entry_no = first_dir_entry_ptr->inode_no;
       if (free_dir_entry_no != 0) {
-        assert(inode.size >= free_dir_entry_no * sizeof(DirEntry));
+        assert(inode.size >= (free_dir_entry_no + 1) * sizeof(DirEntry));
         auto data =
             read_data(inode,
                       VirtualAddressRange(free_dir_entry_no * sizeof(DirEntry),
@@ -959,8 +960,8 @@ namespace raid_fs {
       } else {
         free_dir_entry_no = inode.size / sizeof(DirEntry);
       }
+      LOG_DEBUG("free_dir_entry_no is {}", free_dir_entry_no);
       assert(free_dir_entry_no != 0);
-      assert(free_dir_entry_no * sizeof(DirEntry) != 0);
       auto written_bytes = write_data(
           inode, free_dir_entry_no * sizeof(DirEntry),
           const_block_data_view_type(reinterpret_cast<const char *>(&new_entry),
