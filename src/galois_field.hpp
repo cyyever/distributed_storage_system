@@ -128,8 +128,7 @@ namespace raid_fs::galois_field {
         LOG_ERROR("can't support empty byte vector");
         throw std::runtime_error("can't support empty byte vector");
       }
-      byte_stream_type stream(byte_count, 0);
-      byte_vector = stream;
+      byte_vector = byte_stream_type(byte_count, 0);
     }
     Vector(byte_stream_view_type byte_vector_) : byte_vector(byte_vector_) {
       if (byte_vector_.empty()) {
@@ -144,10 +143,17 @@ namespace raid_fs::galois_field {
         throw std::runtime_error("can't support empty byte vector");
       }
     }
+    Vector(byte_stream_type &&byte_vector_) {
+      byte_vector = std::move(byte_vector_);
+    }
+    Vector(byte_stream_type &byte_vector_)
+        : Vector(byte_stream_view_type(byte_vector_)) {}
+    Vector(const byte_stream_type &byte_vector_)
+        : Vector(const_byte_stream_view_type(byte_vector_)) {}
+
     byte_stream_type &get_byte_vector() {
       return std::get<byte_stream_type>(byte_vector);
     }
-
     Vector &operator+=(const Vector &rhs) {
       check_rhs(rhs);
       for (size_t i = 0; i < size(); i++) {
@@ -157,7 +163,9 @@ namespace raid_fs::galois_field {
     }
 
     Vector operator*(Element scalar) const {
-      auto res = *this;
+      Vector res(
+          byte_stream_type(reinterpret_cast<const char *>(data()), size()));
+      assert(std::holds_alternative<byte_stream_type>(res.byte_vector));
       for (size_t i = 0; i < size(); i++) {
         res.data()[i] *= scalar;
       }
@@ -181,19 +189,6 @@ namespace raid_fs::galois_field {
     // addition
     Vector &operator-=(const Vector &rhs) { return operator+=(rhs); }
 
-  private:
-    void check_rhs(const Vector &rhs) {
-
-      assert(size() == rhs.size());
-      if (size() != rhs.size()) {
-        LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
-                  size(), rhs.size());
-
-        throw std::runtime_error(fmt ::format(
-            "can't add byte vectors with different sizes: {} and {}", size(),
-            rhs.size()));
-      }
-    }
     Element *data() {
       if (auto *ptr = std::get_if<byte_stream_type>(&byte_vector))
         return reinterpret_cast<Element *>(ptr->data());
@@ -205,7 +200,7 @@ namespace raid_fs::galois_field {
     }
     const Element *data() const {
       if (const auto *ptr = std::get_if<byte_stream_type>(&byte_vector))
-        return reinterpret_cast<const Element *>(ptr->size());
+        return reinterpret_cast<const Element *>(ptr->data());
       else if (auto *ptr = std::get_if<byte_stream_view_type>(&byte_vector))
         return reinterpret_cast<const Element *>(ptr->data());
       else
@@ -218,7 +213,20 @@ namespace raid_fs::galois_field {
       else if (auto *ptr = std::get_if<byte_stream_view_type>(&byte_vector))
         return ptr->size();
       else
-        return std::get<byte_stream_view_type>(byte_vector).size();
+        return std::get<const_byte_stream_view_type>(byte_vector).size();
+    }
+
+  private:
+    void check_rhs(const Vector &rhs) {
+      assert(size() == rhs.size());
+      if (size() != rhs.size()) {
+        LOG_ERROR("can't add byte vectors with different sizes: {} and {}",
+                  size(), rhs.size());
+
+        throw std::runtime_error(fmt ::format(
+            "can't add byte vectors with different sizes: {} and {}", size(),
+            rhs.size()));
+      }
     }
 
   private:
@@ -227,6 +235,11 @@ namespace raid_fs::galois_field {
         byte_vector;
   };
 
-  inline Vector operator+(Vector a, const Vector &b) { return a += b; }
+  inline Vector operator+(const Vector &a, const Vector &b) {
+    Vector sum(
+        byte_stream_type(reinterpret_cast<const char *>(a.data()), a.size()));
+    sum += b;
+    return sum;
+  }
 
 } // namespace raid_fs::galois_field

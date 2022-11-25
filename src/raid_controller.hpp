@@ -345,7 +345,8 @@ namespace raid_fs {
             assert(!read_raid_blocks.contains(failed_physical_node_no));
             assert(block_locations.contains(failed_physical_node_no));
             read_raid_blocks[failed_physical_node_no] =
-                std::move(sum.get_byte_vector());
+                byte_stream_type(row_block_views[P_node_idx].data(),
+                                 row_block_views[P_node_idx].size());
             assert(!read_raid_blocks[failed_physical_node_no].empty());
             LOG_DEBUG("recover block {}", failed_physical_node_no);
             continue;
@@ -370,7 +371,8 @@ namespace raid_fs {
             assert(!read_raid_blocks.contains(failed_physical_node_no));
             assert(block_locations.contains(failed_physical_node_no));
             read_raid_blocks[failed_physical_node_no] =
-                std::move(sum.get_byte_vector());
+                byte_stream_type(row_block_views[Q_node_idx].data(),
+                                 row_block_views[Q_node_idx].size());
             assert(!read_raid_blocks[failed_physical_node_no].empty());
             LOG_INFO("recover block {} from Q node", failed_physical_node_no);
             continue;
@@ -483,8 +485,7 @@ namespace raid_fs {
           if (std::ranges::includes(std::views::keys(old_blocks),
                                     row_data_nodes)) {
             if (!invalid_P_node && old_blocks.contains(P_node_idx)) {
-              galois_field::Vector sum(
-                  byte_stream_view_type(old_blocks[P_node_idx]));
+              galois_field::Vector sum(old_blocks[P_node_idx]);
               for (auto const &[physical_node_no, block] : row_map) {
                 if (physical_node_no != P_node_idx &&
                     physical_node_no != Q_node_idx) {
@@ -496,12 +497,11 @@ namespace raid_fs {
                   sum += block;
                 }
               }
-              P_block_opt = std::move(sum.get_byte_vector());
+              P_block_opt = std::move(old_blocks[P_node_idx]);
               row_map[P_node_idx] = P_block_opt.value();
             }
             if (!invalid_Q_node && old_blocks.contains(Q_node_idx)) {
-              galois_field::Vector sum(
-                  byte_stream_view_type(old_blocks[Q_node_idx]));
+              galois_field::Vector sum(old_blocks[Q_node_idx]);
               for (auto const &[physical_node_no, block] : row_map) {
                 if (physical_node_no != P_node_idx &&
                     physical_node_no != Q_node_idx) {
@@ -517,7 +517,7 @@ namespace raid_fs {
                                  physical_node_no));
                 }
               }
-              Q_block_opt = std::move(sum.get_byte_vector());
+              Q_block_opt = std::move(old_blocks[Q_node_idx]);
               row_map[Q_node_idx] = Q_block_opt.value();
             }
           }
