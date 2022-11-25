@@ -979,8 +979,6 @@ namespace raid_fs {
       assert(inode.type == file_type::directory);
       assert(inode.size != 0);
       assert(inode.size % sizeof(DirEntry) == 0);
-      uint64_t remain_size = inode.size;
-      assert(remain_size != 0);
       bool finish = false;
       size_t entry_cnt = 0;
       iterate_file(

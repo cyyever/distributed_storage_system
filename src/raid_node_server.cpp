@@ -30,7 +30,7 @@ namespace raid_fs {
     }
 
     ~RAIDNodeServiceImpl() override = default;
-    ::grpc::Status Read(::grpc::ServerContext *context,
+    ::grpc::Status Read(::grpc::ServerContext *,
                         const ::raid_fs::BlockReadRequest *request,
                         ::raid_fs::BlockReadReply *response) override {
       if (request->block_no() >= disk_ptr->get_block_number()) {
@@ -63,7 +63,7 @@ namespace raid_fs {
       response->set_error(Error::ERROR_FS_INTERNAL_ERROR);
       return ::grpc::Status::OK;
     }
-    ::grpc::Status Write(::grpc::ServerContext *context,
+    ::grpc::Status Write(::grpc::ServerContext *,
                          const ::raid_fs::BlockWriteRequest *request,
                          ::raid_fs::BlockWriteReply *response) override {
       if (request->block_no() >= disk_ptr->get_block_number()) {

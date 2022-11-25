@@ -82,8 +82,8 @@ namespace raid_fs {
       return ::grpc::Status::OK;
     }
     ::grpc::Status
-    GetFileSystemInfo(::grpc::ServerContext *context,
-                      const ::google::protobuf::Empty *request,
+    GetFileSystemInfo(::grpc::ServerContext *,
+                      const ::google::protobuf::Empty *,
                       ::raid_fs::FileSystemInfoReply *response) override {
       auto [super_block, used_inode_number, used_data_block_number] =
           raid_fs.get_file_system_info();

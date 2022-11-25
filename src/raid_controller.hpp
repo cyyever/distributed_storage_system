@@ -380,9 +380,9 @@ namespace raid_fs {
           if (P_node_avaiable && Q_node_avaiable) {
 
             auto it = failed_row_data_nodes.begin();
-            int x = *it;
+            int x = static_cast<int>(*it);
             it++;
-            int y = *it;
+            int y = static_cast<int>(*it);
             LOG_DEBUG("process failed nodes {} {}", x, y);
 
             galois_field::Element P_block(row_block_views[P_node_idx]);
