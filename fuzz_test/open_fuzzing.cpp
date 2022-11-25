@@ -7,6 +7,9 @@
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size);
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size) {
   try {
+    if (Size < 100) {
+      return 0;
+    }
     bool o_create = true;
     bool o_excl = true;
     if (Size >= 2) {
