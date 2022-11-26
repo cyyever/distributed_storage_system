@@ -14,14 +14,14 @@
 namespace raid_fs {
   struct SuperBlock {
     char fs_type[8];
-    uint16_t fs_version;
-    uint64_t block_size;
-    uint64_t bitmap_byte_offset;
-    uint64_t inode_table_offset;
-    uint64_t inode_number;
-    uint64_t next_inode_offset;
-    uint64_t data_table_offset;
-    uint64_t data_block_number;
+    uint16_t fs_version{};
+    uint64_t block_size{};
+    uint64_t bitmap_byte_offset{};
+    uint64_t inode_table_offset{};
+    uint64_t inode_number{};
+    uint64_t next_inode_offset{};
+    uint64_t data_table_offset{};
+    uint64_t data_block_number{};
 
   public:
     VirtualAddressRange get_inode_bitmap_address_range() const {
