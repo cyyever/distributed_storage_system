@@ -18,7 +18,7 @@ inline ::raid_fs::RAIDFileSystem &get_file_system_impl() {
     auto fs_config = ::raid_fs::FileSystemConfig(config_path);
     auto raid_config = ::raid_fs::RAIDConfig(config_path);
     fs_ptr = std::make_unique<::raid_fs::RAIDFileSystem>(
-        fs_config, get_RAID_controller(raid_config));
+        fs_config, get_RAID_controller(raid_config), true);
   }
   return *fs_ptr;
 }
