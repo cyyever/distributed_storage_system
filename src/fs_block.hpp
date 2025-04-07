@@ -8,8 +8,6 @@
 #include <cstdint>
 #include <string>
 
-#include <spdlog/fmt/fmt.h>
-
 #include "block.hpp"
 namespace raid_fs {
   struct SuperBlock {

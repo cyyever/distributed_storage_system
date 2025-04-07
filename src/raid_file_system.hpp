@@ -16,7 +16,6 @@
 
 #include <cyy/algorithm/dict/ordered_dict.hpp>
 #include <cyy/naive_lib/util/runnable.hpp>
-#include <spdlog/fmt/fmt.h>
 
 #include "block_cache.hpp"
 #include "config.hpp"

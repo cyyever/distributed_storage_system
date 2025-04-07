@@ -12,16 +12,17 @@
 #include <ranges>
 #include <set>
 #include <utility>
+#include <format>
 
 #include <cyy/naive_lib/log/log.hpp>
 #include <grpcpp/client_context.h>
 #include <grpcpp/create_channel.h>
-#include <spdlog/fmt/fmt.h>
 
 #include "block.hpp"
 #include "config.hpp"
 #include "galois_field.hpp"
 #include "raid.grpc.pb.h"
+
 
 namespace raid_fs {
   class RAIDController {
@@ -129,7 +130,7 @@ namespace raid_fs {
 
         auto node = reply_map.extract(physical_node_no);
         if (node.empty()) {
-          throw std::runtime_error(fmt::format("invalid grpc tag {}", got_tag));
+          throw std::runtime_error(std::format("invalid grpc tag {}", got_tag));
         }
         auto &[_, reply, grpc_status, __] = node.mapped();
 

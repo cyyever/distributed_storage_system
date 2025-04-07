@@ -10,8 +10,8 @@
 #include <regex>
 #include <string>
 #include <vector>
+#include <format>
 
-#include <spdlog/fmt/fmt.h>
 
 #include <yaml-cpp/yaml.h>
 
@@ -47,7 +47,7 @@ namespace raid_fs {
         return result;
       }
       throw std::invalid_argument(
-          fmt::format("invalid value for {}:{}", key, config_value));
+          std::format("invalid value for {}:{}", key, config_value));
     }
     size_t disk_capacity{};
     bool debug_log{};
@@ -78,7 +78,7 @@ namespace raid_fs {
       auto data_node_number = sub_yaml_node["data_node_number"].as<size_t>();
       if (data_node_number < 2 || data_node_number > 255) {
         throw std::invalid_argument(
-            fmt::format("data node number must be between 2 and "
+            std::format("data node number must be between 2 and "
                         "255, but got invalid value {}",
                         data_node_number));
       }
