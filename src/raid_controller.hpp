@@ -157,8 +157,7 @@ namespace raid_fs {
           block_size(raid_config.block_size) {
 
       auto ports = raid_config.data_ports;
-      ports.insert(ports.end(), raid_config.parity_ports.begin(),
-                   raid_config.parity_ports.end());
+      ports.insert_range(ports.end(), raid_config.parity_ports);
       for (auto port : ports) {
         auto channel =
             grpc::CreateChannel(fmt::format("localhost:{}", port),
